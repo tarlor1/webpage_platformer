@@ -29,9 +29,8 @@ export interface PageEncounter {
   xpPerCoin: number;
   equipment: Equipment | null;
 }
-export interface PagePickup {
+interface PickupAnchor {
   id: string;
-  index: number;
   logicalKey: string;
   platformId: string;
   fraction: number;
@@ -40,6 +39,19 @@ export interface PagePickup {
   y: number;
   available: boolean;
 }
+export interface CoinPickup extends PickupAnchor {
+  kind: 'coin';
+  index: number;
+}
+/** Durable item ownership, written directly when the player touches equipment. */
+export interface EquipmentOwnership {
+  encounterId: string;
+  equipment: Equipment;
+}
+export interface EquipmentPickup extends PickupAnchor, EquipmentOwnership {
+  kind: 'equipment';
+}
+export type PagePickup = CoinPickup | EquipmentPickup;
 export type ProgressionRequest = { type: 'progress:get' }
   | { type: 'progress:collect'; url: string; logicalKey: string; index: number }
   | { type: 'progress:equip'; itemId: string | null };
@@ -48,3 +60,4 @@ export type ProgressionResponse = { ok: true; state: PlayerState; duplicate?: bo
 export const PLAYER_STORAGE_KEY = 'steelSteam.player.v2';
 /** Retained as an untouched migration backup, never overwritten by v2. */
 export const LEGACY_PLAYER_STORAGE_KEY = 'steelSteam.player.v1';
+export const EQUIPMENT_STORAGE_PREFIX = 'steelSteam.equipment.v1:';

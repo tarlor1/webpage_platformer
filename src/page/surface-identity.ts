@@ -1,3 +1,6 @@
+import { composedParent } from './composed-dom';
+import { mediaFrameOwner } from './media-owners';
+
 const CONTENT_OWNER = 'p,h1,h2,h3,h4,h5,h6,li,a,button,label,figcaption,blockquote,[data-item-id],[data-product-id]';
 
 function normalized(value: string): string {
@@ -21,13 +24,17 @@ function resource(value: string, responsive = false): string {
 
 /** Content identity deliberately excludes position, line wrapping, classes and DOM order. */
 export function logicalSurfaceKey(node: Element | Text): string {
-  const element = node instanceof Element ? node : node.parentElement!;
+  const element = node instanceof Element ? node : composedParent(node)!;
+  if (node instanceof Element && mediaFrameOwner(element) === element) return JSON.stringify(['media-frame', element.id]);
   const text = node instanceof Text;
   const owner = text ? element.closest(CONTENT_OWNER) ?? element : element;
-  const entity = owner.closest('[data-item-id],[data-product-id],[data-id]');
-  const authored = entity?.getAttribute('data-item-id') || entity?.getAttribute('data-product-id') || entity?.getAttribute('data-id') || '';
-  const link = owner.closest('a[href]');
-  const href = resource(link?.getAttribute('href') ?? '');
+  let authored = '', href = '';
+  for (let current: Element | null = owner; current; current = composedParent(current)) {
+    authored ||= current.getAttribute('data-item-id') || current.getAttribute('data-product-id')
+      || current.getAttribute('data-id') || current.getAttribute('data-post-id') || current.getAttribute('post-id') || '';
+    if (!href) href = resource(current.getAttribute('href') || current.getAttribute('permalink') || '');
+    if (authored && href) break;
+  }
   const kind = text ? 'text' : element.tagName.toLowerCase();
   let content: string;
   if (text) content = normalized(owner.textContent ?? '');
@@ -41,7 +48,7 @@ export function logicalSurfaceKey(node: Element | Text): string {
       || normalized(element.alt);
   } else if (element instanceof HTMLVideoElement) {
     content = resource(element.getAttribute('src') || '') || resource(element.querySelector('source')?.getAttribute('src') || '')
-      || resource(element.poster, true) || normalized(element.getAttribute('aria-label') || element.id);
+      || resource(element.poster, true) || (authored ? 'video' : normalized(element.getAttribute('aria-label') || element.id));
   } else if (element instanceof HTMLIFrameElement) content = resource(element.getAttribute('src') || '')
     || normalized(element.getAttribute('title') || element.getAttribute('srcdoc') || '');
   else {

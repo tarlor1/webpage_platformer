@@ -25,6 +25,21 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
     if (!pickup.available || collected.has(pickup.id)
       || pickup.x + 8 < sx || pickup.x - 8 > sx + innerWidth
       || pickup.y + 8 < sy || pickup.y - 8 > sy + innerHeight) continue;
+    if (pickup.kind === 'equipment') {
+      const x = pickup.x, y = pickup.y;
+      ctx.fillStyle = '#24343d';
+      ctx.fillRect(x - 11, y - 11, 22, 20);
+      ctx.strokeStyle = '#b9b3ff'; ctx.lineWidth = 1;
+      ctx.strokeRect(x - 11, y - 11, 22, 20);
+      ctx.fillStyle = pickup.equipment.color ?? '#ad874e';
+      ctx.fillRect(x - 7, y - 8, 7, 12);
+      ctx.fillRect(x - 7, y + 1, 15, 5);
+      ctx.fillStyle = '#d8e3e8';
+      ctx.fillRect(x - 6, y - 6, 5, 2);
+      ctx.fillRect(x - 6, y - 2, 5, 2);
+      ctx.fillRect(x - 7, y + 5, 16, 2);
+      continue;
+    }
     ctx.fillStyle = '#e7b24f';
     ctx.strokeStyle = '#704c25';
     ctx.lineWidth = 2;

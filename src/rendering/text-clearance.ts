@@ -1,5 +1,6 @@
 import { OVERLAY_ID } from '../engine/types';
 import type { Rect } from './scenery-types';
+import { composedParent } from '../page/composed-dom';
 
 const MAX_NODES = 12000;
 const MAX_CHANGED_NODES = 512;
@@ -63,6 +64,7 @@ export class TextClearance {
   private documentScrollSources = new Set<Source>();
   private pending = new Set<Source>();
   private moving = new Set<Source>();
+  private roots = new Set<ShadowRoot>();
   private dirtyAll = false;
   private fallbackElements = new Set<Element>();
   private layoutMotion = false;
@@ -138,6 +140,7 @@ export class TextClearance {
     this.documentScrollSources.clear();
     this.pending.clear();
     this.moving.clear();
+    this.roots.clear();
     this.dirtyAll = false;
     this.fallbackElements.clear();
     this.layoutMotion = false;
@@ -153,7 +156,7 @@ export class TextClearance {
       if (node instanceof Element) {
         const opaque = (node.localName.includes('-') || node.hasAttribute('is')) && !node.shadowRoot;
         if (opaque || BOX_TAGS[node.tagName.toUpperCase()] || node instanceof HTMLElement && node.isContentEditable) this.addSource(node, measurement);
-        if (node.shadowRoot) walk(node.shadowRoot);
+        if (node.shadowRoot) { this.roots.add(node.shadowRoot); walk(node.shadowRoot); }
       } else if (node instanceof Text && node.data.trim()) this.addSource(node, measurement);
     };
     const walk = (node: Node): void => {
@@ -161,7 +164,9 @@ export class TextClearance {
       if (++visited > budget) { measurement.truncated = true; return; }
       collect(node);
       const walker = document.createTreeWalker(node, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-        acceptNode: child => child instanceof Element && this.excluded(child) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+        acceptNode: child => child instanceof Element && (this.excluded(child)
+          || child.namespaceURI === 'http://www.w3.org/2000/svg' && child.localName !== 'svg')
+          ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
       });
       let child: Node | null;
       while (visited < budget && (child = walker.nextNode())) { visited++; collect(child); }
@@ -184,15 +189,11 @@ export class TextClearance {
     return style;
   }
 
-  private parent(element: Element): Element | null {
-    return element.assignedSlot ?? element.parentElement ?? (element.getRootNode() instanceof ShadowRoot ? (element.getRootNode() as ShadowRoot).host : null);
-  }
 
   private addSource(node: Element | Text, measurement: Measurement): void {
     if (this.byNode.has(node)) return;
     if (this.sources.length >= MAX_SOURCES) { measurement.truncated = true; return; }
-    const root = node.getRootNode();
-    const element = node instanceof Element ? node : node.assignedSlot ?? node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+    const element = node instanceof Element ? node : composedParent(node);
     if (!element || this.excluded(element)) return;
     const source: Source = { node, element, ancestors: [], clips: [], scrollers: [], documentScroll: false, rectangles: [] };
     if (node instanceof Text) {
@@ -212,7 +213,7 @@ export class TextClearance {
     source.ancestors.length = source.clips.length = source.scrollers.length = 0;
     source.documentScroll = false;
     let containingBlock: 'absolute' | 'fixed' | undefined;
-    for (let ancestor: Element | null = source.element; ancestor && source.ancestors.length < MAX_ANCESTORS; ancestor = this.parent(ancestor)) {
+    for (let ancestor: Element | null = source.element; ancestor && source.ancestors.length < MAX_ANCESTORS; ancestor = composedParent(ancestor)) {
       source.ancestors.push(ancestor);
       let descendants = this.byAncestor.get(ancestor);
       if (!descendants) { descendants = new Set(); this.byAncestor.set(ancestor, descendants); }
@@ -244,8 +245,7 @@ export class TextClearance {
     if (!source.node.isConnected) return;
     try {
       if (source.node instanceof Text) {
-        const root = source.node.getRootNode();
-        const element = source.node.assignedSlot ?? source.node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+        const element = composedParent(source.node);
         if (!element) return;
         source.element = element;
       }
@@ -303,16 +303,19 @@ export class TextClearance {
     if (this.layoutMotion) this.dirtyAll = true; // Final sibling-layout sample after animation removal.
     this.layoutMotion = false;
     try {
-      const animations = document.getAnimations();
-      for (let index = 0; index < Math.min(animations.length, MAX_ANIMATIONS); index++) {
-        const effect = animations[index].effect;
-        if (!(effect instanceof KeyframeEffect) || !(effect.target instanceof Element)) continue;
-        // Layout animations can also move siblings, even on an empty target.
-        // Unsupported transforms/easing use current native bounds, never envelopes.
-        try {
-          if (effect.getKeyframes().some(frame => Object.keys(frame).some(property => !LOCAL_ANIMATION_PROPERTIES[property]))) this.layoutMotion = true;
-        } catch { this.layoutMotion = true; }
-        for (const source of this.byAncestor.get(effect.target) ?? []) moving.add(source);
+      let inspected = 0;
+      for (const tree of [document, ...this.roots]) {
+        if (typeof tree.getAnimations !== 'function') continue;
+        for (const animation of tree.getAnimations()) {
+          if (++inspected > MAX_ANIMATIONS) break;
+          const effect = animation.effect;
+          if (!(effect instanceof KeyframeEffect) || !(effect.target instanceof Element)) continue;
+          try {
+            if (effect.getKeyframes().some(frame => Object.keys(frame).some(property => !LOCAL_ANIMATION_PROPERTIES[property]))) this.layoutMotion = true;
+          } catch { this.layoutMotion = true; }
+          for (const source of this.byAncestor.get(effect.target) ?? []) moving.add(source);
+        }
+        if (inspected >= MAX_ANIMATIONS) break;
       }
     } catch { /* Existing dirty handles remain sampleable without animation metadata. */ }
     if (this.layoutMotion) this.dirtyAll = true;

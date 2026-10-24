@@ -3,6 +3,9 @@ const CONTENT_QUERY_PARAMS: Readonly<Record<string, Readonly<Record<string, true
   'google.com': { q: true, tbm: true, udm: true, start: true, num: true, tbs: true, hl: true, lr: true, cr: true, safe: true, filter: true },
   'youtube.com': { v: true, list: true, index: true, search_query: true, page: true },
   'wikipedia.org': { title: true, search: true, oldid: true, diff: true, curid: true, pageid: true },
+  'reddit.com': { sort: true, t: true, q: true, after: true, before: true, limit: true },
+  'tiktok.com': { q: true },
+  'instagram.com': { img_index: true },
 };
 
 function contentParameters(hostname: string): Readonly<Record<string, true>> | undefined {

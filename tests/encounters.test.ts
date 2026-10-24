@@ -122,3 +122,11 @@ test('population stays sparse while preserving rare platforms and started reward
   assert.deepEqual(discoverEncounters(PAGE, [platform], [empty]), []);
   assert.deepEqual(discoverEncounters(PAGE, [platform], [empty], claimed), [empty]);
 });
+
+test('social-site content queries change identity while share and challenge parameters do not', () => {
+  for (const [host, parameter] of [['www.reddit.com', 'sort'], ['www.tiktok.com', 'q'], ['www.instagram.com', 'img_index']]) {
+    const base = `https://${host}/content?${parameter}=one`;
+    assert.notEqual(pageSeedKey(base), pageSeedKey(`https://${host}/content?${parameter}=two`));
+    assert.equal(pageSeedKey(base), pageSeedKey(`${base}&utm_source=share&igsh=tracking&js_challenge=1&jsc_token=transient#anchor`));
+  }
+});

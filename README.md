@@ -47,17 +47,19 @@ Grounded characters remain attached to their current original platform when scro
 
 ## Coins, levels, and rare equipment
 
-Each eligible logical platform has **3–7 seeded coin pickups**. Each gives **5 coins and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic.
+Deterministic seeding populates about **10% of ordinary logical platforms**, plus every rare equipment platform, with **3–7 coins per populated surface**. Each coin gives **5 coins and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic.
 
-Collecting a platform's entire coin set completes its encounter. Roughly **1% of logical platforms** award rare movement boots automatically to inventory on completion. The URL and logical platform together determine the count, equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or changing viewport size does not reroll rewards. Every player can earn their own copy.
+Roughly **1% of logical platforms** carry rare, visible boots. Walk into them to own them, with no coin, completion, or level prerequisite. Completing a platform's coin set records encounter completion without awarding equipment. The URL and logical platform determine the coin count and equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
 
 Open **Inventory** in the HUD to see owned items, rarity, effects, and equipped status. **Equip** or **Unequip** saves immediately. One boots slot is active at a time, with no stacking. New boots increase jump velocity by a seeded **15–25%**, producing approximately **32–56% greater ideal jump height** at unchanged gravity. The effect applies to subsequent jumps; equipped boots also change the character's footwear color. Previously earned boots retain their attributes.
 
-Generation version 2 uses **host/port + normalized pathname + approved content-changing query parameters + logical platform key**. Fragments, protocol, tracking parameters, and unrecognized query parameters are excluded. Path case, trailing slash, and encoded separators are preserved where they can identify different content. A single hostname-keyed lookup table, `CONTENT_QUERY_PARAMS` in `src/page/page-identity.ts`, contains Google, YouTube, and Wikipedia query rules; subdomains inherit their registered parent-domain rule, and Google country domains share Google's parameter rules. Adding another ordinary website requires a table entry, not another variable or conditional branch. Unknown sites still get pathname-and-platform-seeded rewards. Full canonical identities are retained in claim IDs.
+At most **24 active pickups** (coins and equipment combined) are selected near the player and viewport, prioritizing equipment and the current support. Started and completed encounter history is retained independently of that cap. Selection avoids per-frame page-wide loot walks.
+
+Generation version 2 uses **host/port + normalized pathname + approved content-changing query parameters + logical platform key**. Fragments, protocol, tracking parameters, and unrecognized query parameters are excluded. Path case, trailing slash, and encoded separators are preserved where they identify different content. The hostname-keyed `CONTENT_QUERY_PARAMS` registry in `src/page/page-identity.ts` covers Google, YouTube, Wikipedia, Reddit, TikTok, and Instagram; subdomains inherit parent-domain rules. Google country domains share parameter rules while retaining distinct seed hosts. Further content-query rules belong in this registry. Unknown sites still receive pathname-and-platform-seeded rewards. Full canonical identities are retained in claim IDs.
 
 Logical platform keys use authored content IDs, stable controls, owning text blocks, links, and media identities rather than coordinates or discovery order. Wrapped lines and semantic carousel clones share a reward set. Newly inserted content gets its own set; a recycled element with genuinely new content gets a new key. Indistinguishable duplicates can share rewards when the page supplies no stable distinguishing identity. Physical placement adapts to native geometry, with walking and base-jump-reachable height offsets, including narrow surfaces. Only currently collision-selected surfaces expose pickups; missing or budget-omitted surfaces retain their encounter history. Moving surfaces carry their pickups. No bridges are generated.
 
-The service worker is the sole saved-state writer. It serializes coin claims and equipment changes, commits before replying, and treats repeated claims as no-ops. Coins, XP/level, inventory, equipped item, completed encounters, and claimed rewards survive navigation and browser restart. Active tabs synchronize through storage-change notifications. Storage version 2 migrates version-1 progression and inventory without overwriting the original save. Legacy page-wide claims remain history; new platform-scoped rewards can be earned on previously visited pages because old saves did not record platform identities. Invalid saves and storage errors are reported instead of silently resetting progress.
+Physical equipment contact writes an ownership record directly to `chrome.storage.local` under `steelSteam.equipment.v1:<equipment ID>`, with `{ encounterId, equipment }` as its value. There is no equipment-collection RPC. The worker indexes these durable records into inventory through storage-change notifications and recovers them on first load after restart; repeated same-item writes are idempotent. It remains the sole writer of aggregate player state, serializing coin claims and manual equip changes. New pickups are never auto-equipped. Coins, XP/level, inventory, equipped item, completed encounters, and claimed rewards persist locally, and active tabs synchronize through storage changes. Version-1 progression and inventory migrate without overwriting the original save. Legacy page-wide claims remain history; new platform-scoped rewards can be earned on previously visited pages. Invalid saves and storage errors are reported instead of silently resetting progress.
 
 ## Seeded steampunk scenery
 
@@ -71,12 +73,11 @@ After updating, reload the extension in `chrome://extensions`, refresh the webpa
 
 ## Short demonstration
 
-1. Start on Google’s homepage. Enable Debug: **teal edges** show unskinned static DOM segments, **gold edges** identify moving terrain, and the **red box** is the character collider. Road/track strips occupy their collision edges.
-2. Run along the search field or buttons, jump to a higher surface, and tap Down to descend. Dense text can provide closely spaced footholds.
-3. Click Google’s search box and type a query such as `typescript`. Gameplay pauses and typing works normally.
-4. Submit the search. A full document navigation removes the old game; use the extension’s Start control on the results page.
-5. Explore result headings and text. Scroll, resize, or change browser zoom: grounded support remains attached even offscreen. Falling below the viewport while airborne recovers the last standing platform. Use **Respawn** explicitly to choose currently visible terrain.
-6. Press Escape, then Start again. There should be exactly one character and HUD.
+1. Serve the fixtures as described below and open **`http://127.0.0.1:8080/fixtures/progression.html`**.
+2. Activate the extension with a fresh profile. On the lower button, walk into the visible **Piston Boots** with **0 coins**; collecting nearby coins is optional.
+3. Open **Inventory**, choose **Equip**, then click **Focus game**. Equipment is always equipped manually.
+4. Stand beneath the upper original button and jump. Its **160-pixel rise** is beyond the base jump and reachable with these boots.
+5. Enable Debug to inspect native terrain edges, scroll to check grounded support, and use Down to drop through. Escape stops the game; starting again should leave one character and HUD.
 
 For predictable local scenes, run:
 
@@ -86,13 +87,14 @@ bun run fixture
 
 This uses Python 3 to serve `http://127.0.0.1:8080`. Open a fixture and activate the extension; no file-URL permissions are needed.
 
-For a reproducible equipment demonstration, open **`http://127.0.0.1:8080/fixtures/progression.html`**. Its lower control has a stable authored platform key whose normal seed awards **Piston Boots** after three coins; this is a selected fixture seed, not a debug grant or game-engine exception. Other platforms still have their own seeded counts. Walk and jump to collect the lower control's coins, open Inventory, equip the boots, click Focus game, stand under the upper button, and jump. Its 160-pixel rise is beyond the base jump but reachable with these boots. Restart Chrome using the same profile and activate again to inspect the saved inventory and completion. A different hostname or port changes the seed and may not award these boots.
+The default progression fixture selects a normal seed that places **Piston Boots** (1.2× jump velocity) on its lower `foundry-workshop-62` button, alongside three coins. This is an authored fixture seed, not a debug grant or engine exception. Walking into the boots requires neither a jump nor coins. After manual Equip, the upper button demonstrates the 160-pixel jump. A different hostname or port changes the seed and may place different equipment. Saved ownership is separate from activation and per-page coordinates; see the verification record for the scope of exercised restart checks.
 
 
 - `fixtures/progression.html`: original lower/upper buttons for coin collection, rare rewards, and a 160-pixel equipment-gated jump.
 - `fixtures/decorations.html`: silver railway tracks over brown wooden sleepers, roads, fine/wrapped text, image/SVG lettering, moving surfaces, fixed/sticky controls, nested scrolling, and dynamic text insertion.
 - `fixtures/animated-layout.html`: JavaScript motion, sticky overlap, horizontal resets, oversized clipped images, native video/iframe frames, decorative canvas, wrapped text, and newly inserted platforms.
 - `fixtures/clearance-motion.html`: animated text masks, opacity/clipping changes, decorative versus named canvases, nested scrolling, and immediate insertion protection.
+- `fixtures/shadow-media.html`: open-shadow media extraction, inserted shadow children, and roots attached after activation.
 - `fixtures/moving.html`: use the scene selector, **Reset**, and **Run/Pause** controls to explore moving images, text, and controls, including ancestor motion, CSS transitions, Web Animations, and JavaScript-driven movement.
 - `fixtures/late-motion.html`: activate first, then start an offscreen image’s native Web Animation, including the initially transparent case; no DOM mutation is needed for discovery.
 - `fixtures/images.html`: large and empty-alt image surfaces, plus excluded presentation/hidden images.
@@ -113,7 +115,7 @@ TypeScript, Manifest V3, esbuild, and Canvas 2D. No UI or game framework.
 | `src/progression/` | Deterministic platform encounters, pickup anchors, equipment, player state/migration, worker protocol/client |
 | `src/ui/` | HUD progression, inventory, equip/unequip |
 
-Geometry uses `getBoundingClientRect()` for controls and media and `Range.getClientRects()` for readable text fragments. It intersects media with ancestor overflow clips, so a parallax image inside a stable cropped frame supplies the visible frame edge. Native video and outer iframe frames are eligible; their internal pixels or cross-origin DOM are not inspected. Suitable CSS-background media is supported without treating arbitrary large wrappers as solid blocks. Accessibility-only `aria-hidden`, `inert`, or empty `alt` does not itself prove an element is unpainted. Fullscreen decorative GL/Rive canvases are excluded from terrain and whole-viewport protection.
+Geometry uses `getBoundingClientRect()` for controls and media and `Range.getClientRects()` for readable text fragments. Extraction traverses accessible open shadow roots, observes mutations and late attachment, and follows composed ancestors for clipping and visibility. Media is intersected with ancestor overflow clips, so a parallax image inside a cropped frame supplies the visible frame edge. Native video and outer iframe frames are eligible; cross-origin iframe internals are not inspected. YouTube uses a stable media-frame owner so internal video replacement or temporary hiding does not discard the frame platform. Suitable CSS-background media is supported without treating arbitrary large wrappers as solid blocks. Accessibility-only `aria-hidden`, `inert`, or empty `alt` does not itself prove an element is unpainted. Fullscreen decorative GL/Rive canvases are excluded.
 
 Physics uses **document CSS pixels** throughout. Measurements add the current scroll offset; rendering subtracts it. A 120 Hz fixed timestep and relative swept top-crossing checks prevent fast falls through thin ledges. Valid grounded support stays locked through crossings. Existing riders follow reflowed surfaces, but layout jumps are not swept into airborne characters as moving lifts. Detected horizontal resets detach without transporting the rider across the page. Jump buffering and brief coyote time make takeoff more forgiving.
 
@@ -125,10 +127,10 @@ Stopping aborts active-game DOM/storage listeners, disconnects observers, cancel
 
 See [VERIFICATION.md](VERIFICATION.md) for the exact live pages, viewport/zoom coverage, lifecycle checks, and verification limits.
 
-- Terrain uses Light DOM boundaries: iframe internals, shadow-root internals, pseudo-element text, and objects painted inside arbitrary canvas/WebGL content are not separately detected. Clearance also inspects accessible shadow-root text.
+- Open shadow roots are supported; closed roots are inaccessible. Cross-origin iframe internals, pseudo-element text, and objects painted inside arbitrary canvas/WebGL content are not separately detected. Outer iframe frames can provide terrain.
 - Visibility and clipping are axis-aligned approximations, not complete paint/occlusion analysis. Rotations, unusual clip paths, transformed document roots, and overlapping dialogs can produce unsuitable surfaces.
 - Geometry selection is bounded; very dense pages can omit collision surfaces. Grounded offscreen state and checkpoint identity are retained, but original surfaces are not guaranteed to form a connected route.
-- Text-heavy pages can show many coins. Rarity is per logical platform, not a fixed per-page equipment quota.
+- Coin placement is sparse and deterministic, with a 24-active-pickup cap. Rarity is per logical platform, not a fixed per-page equipment quota. This bound is not an FPS guarantee.
 - Loop resets cannot always be distinguished from very fast continuous movement using DOM bounds alone. The generic large-horizontal-reset fallback detaches conservatively; seamless loop riding needs a site-specific adapter.
 - Empty pages or removed checkpoints can leave recovery unavailable. The HUD stops the fall and reports this condition; manual Respawn still requires a visible eligible original surface.
 - Chrome-internal pages, the Chrome Web Store, PDFs in Chrome’s viewer, and other restricted documents cannot be injected. The popup explains injection failures.

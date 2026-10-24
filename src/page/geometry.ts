@@ -1,6 +1,8 @@
 import { OVERLAY_ID, type Platform } from '../engine/types';
 import { logicalSurfaceKey } from './surface-identity';
 import { isDecorativeCanvas } from '../rendering/text-clearance';
+import { composedParent } from './composed-dom';
+import { mediaFrameOwner } from './media-owners';
 
 const MAX_NODES = 6000;
 const MAX_RECTS = 1600;
@@ -23,6 +25,7 @@ interface Source {
   continuous: boolean;
   documentScroll: boolean;
   scrollers: Element[];
+  ancestors: Element[];
 }
 interface Measurement {
   styles: Map<Element, CSSStyleDeclaration>;
@@ -46,6 +49,9 @@ export class PageGeometry {
   selectionRevision = 0;
   get registryPlatforms(): readonly Platform[] { return this.registry; }
   private animationTargets = new Set<Element>();
+  private roots = new Set<ShadowRoot>();
+  private shadowHosts = new Set<Element>();
+  get shadowRoots(): ReadonlySet<ShadowRoot> { return this.roots; }
   private nextAnimationDiscovery = 0;
   private viewport: Area = { left: 0, right: 0, top: 0, bottom: 0 };
   private interest?: Area;
@@ -56,6 +62,8 @@ export class PageGeometry {
     this.interestPoint = interest;
     this.updateAreas();
     this.discoverAnimations(true);
+    this.roots.clear();
+    this.shadowHosts.clear();
     const oldSources = new Map(this.sources.map(source => [source.node, source]));
     const nextSources: Source[] = [];
     const seen = new Set<Node>();
@@ -63,6 +71,7 @@ export class PageGeometry {
     const collect = (node: Element | Text): void => {
       if (seen.has(node) || measurement.rects >= MAX_RECTS) return;
       seen.add(node);
+      for (let root = node.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode()) this.roots.add(root);
       const source = oldSources.get(node) ?? this.createSource(node, measurement);
       if (!source) return;
       source.animated = this.hasAnimatedAncestor(source.element);
@@ -80,12 +89,14 @@ export class PageGeometry {
       if (source.node.isConnected && [...source.platforms.values()].some(platform => this.inInterest(platform))) collect(source.node);
     }
     let visited = 0;
-    const walk = (root: Element, animated: boolean): void => {
+    const walkedRoots = new Set<ShadowRoot>();
+    const walk = (root: Element | ShadowRoot, animated: boolean): void => {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
         acceptNode: node => {
           if (++visited >= MAX_NODES) return NodeFilter.FILTER_ACCEPT;
           if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
           const element = node as Element;
+          if (element.namespaceURI === 'http://www.w3.org/2000/svg' && element.localName !== 'svg') return NodeFilter.FILTER_REJECT;
           return (animated ? this.excluded(element) : this.hidden(element, measurement))
             ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
         },
@@ -94,6 +105,15 @@ export class PageGeometry {
       while (visited < MAX_NODES && measurement.rects < MAX_RECTS && (node = walker.nextNode())) {
         if (visited >= MAX_NODES) break;
         collect(node as Element | Text);
+        if (node instanceof Element) {
+          this.shadowHosts.add(node);
+          const shadow = node.shadowRoot;
+          if (shadow && !walkedRoots.has(shadow)) {
+            this.roots.add(shadow);
+            walkedRoots.add(shadow);
+            walk(shadow, animated);
+          }
+        }
       }
     };
     // Animated roots get bounded discovery before the ordinary visible scan.
@@ -102,13 +122,19 @@ export class PageGeometry {
     for (const target of this.animationTargets) {
       if (visited >= MAX_NODES || measurement.rects >= MAX_RECTS) break;
       let excluded = false;
-      for (let ancestor: Element | null = target; ancestor; ancestor = ancestor.parentElement) {
+      for (let ancestor: Element | null = target; ancestor; ancestor = composedParent(ancestor)) {
         if (this.excluded(ancestor)) { excluded = true; break; }
       }
-      if (excluded || target.parentElement && this.hasAnimatedAncestor(target.parentElement)) continue;
+      const parent = composedParent(target);
+      if (excluded || parent && this.hasAnimatedAncestor(parent)) continue;
       visited++;
       collect(target);
       walk(target, true);
+      if (target.shadowRoot && !walkedRoots.has(target.shadowRoot)) {
+        this.roots.add(target.shadowRoot);
+        walkedRoots.add(target.shadowRoot);
+        walk(target.shadowRoot, true);
+      }
     }
     if (document.body) walk(document.body, false);
     // Discovery budgets and scrolling must not evict previously discovered terrain.
@@ -171,8 +197,12 @@ export class PageGeometry {
   markChanged(target: Node, continuous = false): void {
     const stylesheet = target instanceof Element && (target.tagName === 'STYLE' || target.tagName === 'LINK')
       || target.parentElement?.tagName === 'STYLE';
+    const hosts: Element[] = [];
+    for (let root = target.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode()) hosts.push(root.host);
     for (const source of this.sources) {
-      if (stylesheet || target === source.node || target.contains(source.node) || source.element.contains(target)) {
+      if (stylesheet || target === source.node || target.contains(source.node) || source.element.contains(target)
+        || target instanceof Element && source.ancestors.includes(target)
+        || hosts.some(host => source.element === host || source.element.contains(host))) {
         source.pending = 3;
         source.continuous ||= continuous;
       }
@@ -188,6 +218,8 @@ export class PageGeometry {
     this.registryRevision++;
     this.selectionRevision++;
     this.animationTargets.clear();
+    this.roots.clear();
+    this.shadowHosts.clear();
     this.ids = new WeakMap();
     this.nextId = 1;
     this.nextAnimationDiscovery = 0;
@@ -219,8 +251,10 @@ export class PageGeometry {
 
   private createSource(node: Element | Text, measurement: Measurement): Source | undefined {
     const text = node.nodeType === Node.TEXT_NODE;
-    const element = text ? node.parentElement : node as Element;
+    const element = text ? composedParent(node) : node as Element;
     if (!element) return;
+    const owner = mediaFrameOwner(element);
+    if (owner && owner !== element) return;
     let label: string;
     let range: Range | undefined;
     if (text) {
@@ -234,19 +268,20 @@ export class PageGeometry {
       const style = this.styleFor(element, measurement);
       const background = style.backgroundImage !== 'none';
       const image = element.tagName === 'IMG' || element.tagName === 'VIDEO' || element.tagName === 'IFRAME'
-        || element.tagName === 'CANVAS' || element.getAttribute('role') === 'img' || background;
+        || element.tagName === 'CANVAS' || element.getAttribute('role') === 'img' || background || !!owner;
       if ((!control && !image) || element.getAttribute('type') === 'hidden') return;
       const bounds = element.getBoundingClientRect();
       if (isDecorativeCanvas(element, style, bounds)) return;
-      if (background && !control && !/^(IMG|VIDEO|IFRAME|CANVAS)$/.test(element.tagName)
+      if (background && !control && !owner && !/^(IMG|VIDEO|IFRAME|CANVAS)$/.test(element.tagName)
         && (bounds.width > innerWidth * 1.2 || bounds.height > innerHeight * 1.2)) return;
       // Empty alt is an accessibility choice, not evidence that an image has no
       // visible physical surface. Large hero and promotional images count too.
-      label = (element.getAttribute('aria-label') || element.getAttribute('alt')
+      label = owner ? 'Video player' : (element.getAttribute('aria-label') || element.getAttribute('alt')
         || element.getAttribute('value') || element.textContent || element.tagName).trim().slice(0, 70);
     }
     if (!this.ids.has(node)) this.ids.set(node, this.nextId++);
-    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0, continuous: false, documentScroll: false, scrollers: [] };
+    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0,
+      continuous: false, documentScroll: false, scrollers: [], ancestors: [] };
   }
 
   private measureSource(source: Source, measurement: Measurement, rebuilding: boolean): void {
@@ -256,7 +291,9 @@ export class PageGeometry {
     let hidden = !source.node.isConnected;
     source.documentScroll = false;
     source.scrollers.length = 0;
-    for (let element: Element | null = source.element; element && !hidden; element = element.parentElement) {
+    source.ancestors.length = 0;
+    for (let element: Element | null = source.element; element && !hidden; element = composedParent(element)) {
+      source.ancestors.push(element);
       hidden = this.hidden(element, measurement);
       const style = this.styleFor(element, measurement);
       const clipX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX);
@@ -390,7 +427,7 @@ export class PageGeometry {
   }
 
   private hasAnimatedAncestor(element: Element): boolean {
-    for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+    for (let ancestor: Element | null = element; ancestor; ancestor = composedParent(ancestor)) {
       if (this.animationTargets.has(ancestor)) return true;
     }
     return false;
@@ -400,14 +437,19 @@ export class PageGeometry {
     const now = performance.now();
     if (!force && now < this.nextAnimationDiscovery) return;
     this.nextAnimationDiscovery = now + ANIMATION_DISCOVERY_MS;
+    for (const host of this.shadowHosts) {
+      if (host.isConnected && host.shadowRoot && !this.roots.has(host.shadowRoot)) this.needsRebuild = true;
+    }
     const targets = new Set<Element>();
-    if (typeof document.getAnimations === 'function') {
-      const animations = document.getAnimations();
-      for (let index = 0; index < animations.length && index < MAX_ANIMATIONS; index++) {
-        const animation = animations[index];
+    let inspected = 0;
+    for (const tree of [document, ...this.roots]) {
+      if (typeof tree.getAnimations !== 'function') continue;
+      for (const animation of tree.getAnimations()) {
+        if (++inspected > MAX_ANIMATIONS) break;
         const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
         if (target instanceof Element && target.isConnected && (animation.playState === 'running' || animation.pending)) targets.add(target);
       }
+      if (inspected >= MAX_ANIMATIONS) break;
     }
     // Element.animate() emits no DOM mutation or CSS animation event. Request
     // discovery once per newly active target, even if it has no cached source.
