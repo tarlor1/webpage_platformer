@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Steel & Steam — Webpage Platformer",
+  "version": "1.0.0",
+  "description": "Turn webpage geometry into a keyboard-controlled platforming playground.",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_title": "Steel & Steam",
+    "default_popup": "popup.html"
+  }
+}
