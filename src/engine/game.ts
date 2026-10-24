@@ -121,6 +121,7 @@ export class Game {
       .panel-header{display:flex;align-items:center;gap:6px}
       .panel-drag{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:4px 0;cursor:grab;touch-action:none;user-select:none}
       .panel-drag:active{cursor:grabbing}
+      section.dragging{will-change:transform}
       .panel-drag strong{font-size:11px;letter-spacing:.04em}
       .panel-toggle{flex:none;font-size:18px;line-height:1;padding:4px 7px}
       [hidden]{display:none!important}
@@ -153,7 +154,7 @@ export class Game {
       .catch(error => this.showProgressError(error, run));
     this.surface = shadow.querySelector('.surface')!;
     const focus = () => this.surface!.focus({ preventScroll: true });
-    mountMovablePanel(shadow.querySelector('section')!, signal, focus, this.layoutChanged);
+    mountMovablePanel(shadow.querySelector('section')!, signal, focus);
     shadow.querySelector('.focus')!.addEventListener('click', focus, { signal });
     const locate = document.createElement('button');
     locate.type = 'button';
