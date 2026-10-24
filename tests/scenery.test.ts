@@ -144,7 +144,7 @@ test('debug strokes stop at strips, labels/collider remain, and unavailable coin
     const ctx = {
       canvas: { ownerDocument: { createElement: () => ({ width: 0, height: 0, getContext: () => paint }) } },
       clearRect() {}, save() {}, restore() {}, translate() {}, fillRect() {}, beginPath() {}, stroke() {},
-      arc() { coins++; }, fill() {},
+      arc() { coins++; }, fill() {}, closePath() {},
       moveTo(x: number, y: number) { start = [x, y]; },
       lineTo(x: number, y: number) { segments.push([...start, x, y]); },
       drawImage() { images++; },
@@ -157,10 +157,11 @@ test('debug strokes stop at strips, labels/collider remain, and unavailable coin
       { placements, protectedRects: [], ready: true },
       [{ kind: 'coin', id: 'unavailable', index: 0, logicalKey: 'original-heading', platformId: platform.id, fraction: 0.5, lift: 22, x: 100, y: 78, available: false }], new Set(), false);
     const strip = placements[0];
-    assert.deepEqual(segments, [
+    assert.deepEqual(segments.slice(0, 2), [
       [platform.x, platform.y, strip.x, platform.y],
       [strip.x + strip.width, platform.y, platform.x + platform.width, platform.y],
     ]);
+    assert.ok(segments.length > 2, 'player silhouette is traced after platform geometry');
     assert.equal(images, 1);
     assert.equal(labels, 1);
     assert.equal(colliders, 1);

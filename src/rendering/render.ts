@@ -64,6 +64,24 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
     }
   }
   const { x, y, width: w, height: h } = player;
+  // Trace the sprite silhouette rather than outlining its rectangular hitbox.
+  // Adds an outline to the player
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y); ctx.lineTo(x + w - 2, y);
+  ctx.lineTo(x + w - 2, y + 9); ctx.lineTo(x + w, y + 9);
+  ctx.lineTo(x + w, y + 17); ctx.lineTo(x + w - 3, y + 17);
+  ctx.lineTo(x + w - 3, y + h - 5); ctx.lineTo(x + w - 1, y + h - 5);
+  ctx.lineTo(x + w - 1, y + h); ctx.lineTo(x + 1, y + h);
+  ctx.lineTo(x + 1, y + h - 5); ctx.lineTo(x + 3, y + h - 5);
+  ctx.lineTo(x + 3, y + 17); ctx.lineTo(x, y + 17);
+  ctx.lineTo(x, y + 9); ctx.lineTo(x + 2, y + 9); ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#15212b'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.strokeStyle = '#fff4d6'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.restore();
+
+  // Fills in the player
   ctx.fillStyle = '#202f39'; ctx.fillRect(x + 3, y + 10, w - 6, h - 10);
   ctx.fillStyle = '#70878b'; ctx.fillRect(x, y + 9, w, 8); ctx.fillRect(x + 2, y, w - 4, 13);
   ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + (facing > 0 ? 11 : 3), y + 4, 8, 5);

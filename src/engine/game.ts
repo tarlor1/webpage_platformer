@@ -3,6 +3,7 @@ import { buildLevel, fellBelowViewport, outsidePage } from './level';
 import { Input } from './input';
 import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from './physics';
 import { drawWorld } from '../rendering/render';
+import { drawPlayerLocator } from '../rendering/player-locator';
 import { MOTION, OVERLAY_ID, type Body, type Level } from './types';
 import { TextClearance } from '../rendering/text-clearance';
 import { sceneryDesigns } from '../rendering/scenery-art';
@@ -53,6 +54,7 @@ export class Game {
   private accumulator = 0;
   private debug = false;
   private facing = 1;
+  private locatorStarted = -Infinity;
   private coyote = 0;
   private jumpBuffer = 0;
   private lastUrl = '';
@@ -90,6 +92,7 @@ export class Game {
     this.progressError = '';
     this.debug = false;
     this.facing = 1;
+    this.locatorStarted = -Infinity;
     this.lastHud = 0;
     this.lastStanding = undefined;
     this.stranded = false;
@@ -142,6 +145,15 @@ export class Game {
     this.surface = shadow.querySelector('.surface')!;
     const focus = () => this.surface!.focus({ preventScroll: true });
     shadow.querySelector('.focus')!.addEventListener('click', focus, { signal });
+    const locate = document.createElement('button');
+    locate.type = 'button';
+    locate.className = 'locate';
+    locate.textContent = 'Find player';
+    locate.title = 'Show an arrow pointing to the player';
+    shadow.querySelector('.focus')!.after(locate);
+    locate.addEventListener('click', () => {
+      this.locatorStarted = performance.now();
+    }, { signal });
     shadow.querySelector('.debug')!.addEventListener('click', () => { this.toggleDebug(); focus(); }, { signal });
     shadow.querySelector('.respawn')!.addEventListener('click', () => { this.respawn(); focus(); }, { signal });
     shadow.querySelector('.stop')!.addEventListener('click', () => this.stop(), { signal });
@@ -489,6 +501,7 @@ export class Game {
     }
     if (Math.abs(player.x - this.inspectedX) > 200 || Math.abs(player.y - this.inspectedY) > 200) this.schedule();
     drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.activePickups, this.collected, this.jumpMultiplier > 1);
+    drawPlayerLocator(this.ctx!, player, now - this.locatorStarted);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
       const offscreen = player.x + player.width < scrollX || player.x > scrollX + innerWidth

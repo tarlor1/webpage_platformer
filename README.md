@@ -35,6 +35,7 @@ For development, `bun run watch` rebuilds TypeScript changes. After changing the
 | S / ↓ | Drop through the platform you are standing on; tap again for another level |
 | B or **Debug** | Toggle terrain edges, player collision box, coordinates, and grounded state; gold edges identify actual moving DOM terrain |
 | **Focus game** | Return keyboard control to the game |
+| **Find player** | Show a large arrow that shrinks toward the player, then fades; offscreen players are indicated at the viewport edge |
 | **Respawn** | Explicitly move to a currently visible original webpage surface |
 | **Inventory → Equip / Unequip** | Manage owned boots; inventory controls retain keyboard focus and pause gameplay |
 | Escape, HUD **Stop**, or popup **Stop platforming** | Remove the game overlay |
