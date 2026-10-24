@@ -1,18 +1,19 @@
-import { PageGeometry } from './geometry';
-import { buildLevel, outsidePage } from './level';
+import { PageGeometry } from '../page/geometry';
+import { buildLevel, fellBelowViewport, outsidePage } from './level';
 import { Input } from './input';
 import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from './physics';
-import { drawWorld } from './render';
+import { drawWorld } from '../rendering/render';
 import { MOTION, OVERLAY_ID, type Body, type Level } from './types';
-import { TextClearance } from './text-clearance';
-import { sceneryDesigns } from './scenery-art';
-import { placeScenery, updateScenery } from './scenery';
-import type { SceneryDesign, SceneryScene } from './scenery-types';
-import { encounterForUrl } from './encounters';
-import { planPickups, updatePickups } from './collectibles';
-import { requestProgression } from './progression-client';
-import { mountProgressionUI, type ProgressionPanel } from './progression-ui';
-import { PLAYER_STORAGE_KEY, type PageEncounter, type PagePickup, type PlayerState } from './progression-types';
+import { TextClearance } from '../rendering/text-clearance';
+import { sceneryDesigns } from '../rendering/scenery-art';
+import { placeScenery, updateScenery } from '../rendering/scenery';
+import type { SceneryDesign, SceneryScene } from '../rendering/scenery-types';
+import { discoverEncounters } from '../progression/encounters';
+import { pageSeedKey } from '../page/page-identity';
+import { planPickups, selectActivePickups, updatePickups } from '../progression/collectibles';
+import { requestProgression } from '../progression/progression-client';
+import { mountProgressionUI, type ProgressionPanel } from '../ui/progression-ui';
+import { PLAYER_STORAGE_KEY, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
 
 export class Game {
   active = false;
@@ -30,7 +31,6 @@ export class Game {
   private designs: SceneryDesign[] = [];
   private scenery: SceneryScene = { placements: [], protectedRects: [], ready: false };
   private sceneryStale = true;
-  private motionTimer = 0;
   private inspectedX = 0;
   private inspectedY = 0;
   private lastStanding?: { id: string; offset: number };
@@ -53,8 +53,11 @@ export class Game {
   private lastHud = 0;
   private run = 0;
   private saved?: PlayerState;
-  private encounter?: PageEncounter;
+  private encounters: PageEncounter[] = [];
+  private pickupRevision = -1;
+  private collisionRevision = -1;
   private pickups: PagePickup[] = [];
+  private activePickups: PagePickup[] = [];
   private collected = new Set<string>();
   private pendingClaims = new Set<string>();
   private jumpMultiplier = 1;
@@ -66,8 +69,11 @@ export class Game {
     this.active = true;
     const run = ++this.run;
     this.saved = undefined;
-    this.encounter = encounterForUrl(location.href);
+    this.encounters = [];
+    this.pickupRevision = -1;
+    this.collisionRevision = -1;
     this.pickups = [];
+    this.activePickups.length = 0;
     this.collected.clear();
     this.pendingClaims.clear();
     this.jumpMultiplier = 1;
@@ -113,7 +119,7 @@ export class Game {
         this.acceptProgress(state, run);
       },
     });
-    this.progressionPanel.update(null, this.encounter!);
+    this.progressionPanel.update(null, this.encounters);
     const storageChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area === 'local' && changes[PLAYER_STORAGE_KEY]?.newValue) {
         this.acceptProgress(changes[PLAYER_STORAGE_KEY].newValue as PlayerState, run);
@@ -144,46 +150,35 @@ export class Game {
     document.addEventListener('visibilitychange', () => { this.last = 0; this.accumulator = 0; this.input?.clear(); }, { signal });
     this.mutation = new MutationObserver(records => {
       let changed = false;
-      let moved = false;
+      let structural = false;
       for (const record of records) {
         if (host.contains(record.target) || record.target === host) continue;
-        this.geometry?.markChanged(record.target);
         const element = record.target instanceof Element ? record.target : record.target.parentElement;
         const hidden = element?.closest('[hidden]');
         const invisibleStyleWrite = record.type === 'attributes' && record.attributeName === 'style'
           && hidden && getComputedStyle(hidden).display === 'none';
         const styleMotion = !invisibleStyleWrite && record.type === 'attributes' && record.attributeName === 'style'
           && element && this.clearance?.markStyleMotion(element, record.oldValue);
-        moved ||= !!styleMotion;
+        this.geometry?.markChanged(record.target, !!styleMotion);
         if (!invisibleStyleWrite && !styleMotion) {
           this.sceneryStale = true;
-          this.scenery.ready = false;
           this.clearance?.markChanged(record.target);
+          if (record.type === 'childList') {
+            for (const node of record.addedNodes) this.clearance?.markChanged(node);
+          }
+          structural = true;
         }
         changed = true;
       }
-      if (moved) {
-        this.geometry?.sampleMotion();
-        this.clearance?.sampleMotion();
-        this.refreshScenery();
-      }
-      if (changed) this.schedule();
+      if (changed && (structural || this.geometry?.needsRebuild || this.clearance?.needsRebuild)) this.schedule();
     });
-    this.mutation.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'src'] });
+    this.mutation.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'src', 'srcset', 'href', 'data-id', 'data-item-id', 'data-product-id'] });
     this.resize = new ResizeObserver(this.layoutChanged);
     this.resize.observe(document.documentElement);
     if (document.body) this.resize.observe(document.body);
     void document.fonts.ready.then(() => { if (this.active) this.layoutChanged(); });
     this.lastUrl = location.href;
     this.rebuild();
-    // Only cached moving sources are measured here; full DOM scans stay debounced.
-    this.motionTimer = window.setInterval(() => {
-      this.geometry?.sampleMotion();
-      if (this.geometry?.needsRebuild) this.schedule();
-      if (performance.now() >= this.nextBoundsRead) this.measurePageBounds();
-      this.clearance?.sampleMotion();
-      this.refreshScenery();
-    }, 16);
     focus();
     this.last = 0;
     this.frame = requestAnimationFrame(this.tick);
@@ -198,17 +193,12 @@ export class Game {
 
   private scrolled = (event: Event): void => {
     this.geometry?.markScrolled(event.target);
-    this.geometry?.sampleMotion();
     this.clearance?.markScrolled(event.target);
-    // Cached fixed/sticky/nested-scroll bounds must be current before the next draw.
-    this.clearance?.sampleMotion();
-    this.refreshScenery();
     this.schedule();
   };
 
   private layoutChanged = (): void => {
     this.sceneryStale = true;
-    this.scenery.ready = false;
     this.clearance?.markChanged(document.documentElement);
     this.schedule();
   };
@@ -292,7 +282,7 @@ export class Game {
 
   private restoreLastStanding(): boolean {
     const saved = this.lastStanding;
-    const platform = saved && this.level!.platforms.find(p => p.id === saved.id);
+    const platform = saved && this.geometry!.registryPlatforms.find(p => p.id === saved.id);
     if (!platform) return false;
     respawnOnPlatform(this.player!, platform, saved!.offset);
     this.stranded = false;
@@ -304,10 +294,12 @@ export class Game {
   }
 
   private commitMotion(): void {
-    for (const p of this.level!.platforms) {
+    for (const p of this.geometry!.registryPlatforms) {
       p.previousX = p.x;
       p.previousY = p.y;
       p.previousWidth = p.width;
+      p.discontinuous = false;
+      p.reflow = false;
     }
   }
   private measureSceneryHud(): void {
@@ -324,7 +316,7 @@ export class Game {
     this.sceneryStale = false;
     this.measureSceneryHud();
     this.scenery.protectedRects = this.clearance!.rectangles;
-    this.scenery.placements = placeScenery(this.designs, this.level!.platforms, this.scenery.placements);
+    this.scenery.placements = placeScenery(this.designs, this.geometry!.registryPlatforms, this.scenery.placements);
     this.scenery.ready = this.clearance!.complete;
   }
 
@@ -332,15 +324,17 @@ export class Game {
     if (!this.level || !this.host || !this.clearance) return;
     this.measureSceneryHud();
     this.scenery.protectedRects = this.clearance.rectangles;
-    this.scenery.ready = !this.sceneryStale && this.clearance.complete;
-    updateScenery(this.scenery.placements, this.level.platforms);
-    updatePickups(this.pickups, this.level.platforms);
-    if (!this.pickups.length && this.player?.grounded) this.refreshPickups();
+    this.scenery.ready = this.clearance.complete;
+    updateScenery(this.scenery.placements, this.geometry!.registryPlatforms);
+    if (this.pickupRevision !== this.geometry!.registryRevision
+      || this.collisionRevision !== this.geometry!.selectionRevision) this.refreshPickups();
+    else updatePickups(this.pickups, this.level.platforms);
+    if (this.player) selectActivePickups(this.pickups, this.player, this.activePickups);
   }
 
   private acceptProgress(state: PlayerState, run: number): void {
     if (!this.active || run !== this.run || this.saved && state.revision < this.saved.revision) return;
-    if (state.version !== 1 || !Array.isArray(state.inventory) || !Array.isArray(state.collectedCoins)) {
+    if (state.version !== 2 || !Array.isArray(state.inventory) || !Array.isArray(state.collectedCoins)) {
       this.showProgressError(new Error('Saved progression format is incompatible.'), run);
       return;
     }
@@ -348,34 +342,37 @@ export class Game {
     this.collected = new Set(state.collectedCoins);
     this.jumpMultiplier = state.inventory.find(item => item.id === state.equippedItemId)?.jumpMultiplier ?? 1;
     this.progressError = '';
-    this.progressionPanel?.update(state, this.encounter!);
+    this.progressionPanel?.update(state, this.encounters);
     this.refreshPickups();
   }
 
   private showProgressError(error: unknown, run: number): void {
     if (!this.active || run !== this.run) return;
     this.progressError = error instanceof Error ? error.message : String(error);
-    this.progressionPanel?.update(this.saved ?? null, this.encounter!, this.progressError);
+    this.progressionPanel?.update(this.saved ?? null, this.encounters, this.progressError);
   }
 
   private refreshPickups(): void {
-    if (!this.level || !this.player || !this.encounter || !this.saved) return;
-    if (!this.pickups.length) this.pickups = planPickups(this.encounter, this.level.platforms, this.player);
-    updatePickups(this.pickups, this.level.platforms);
+    if (!this.geometry || !this.level || !this.saved) return;
+    this.encounters = discoverEncounters(location.href, this.geometry.registryPlatforms, this.encounters, this.collected);
+    this.pickups = planPickups(this.encounters, this.level.platforms, this.pickups, this.collected);
+    this.pickupRevision = this.geometry.registryRevision;
+    this.collisionRevision = this.geometry.selectionRevision;
+    if (this.player) selectActivePickups(this.pickups, this.player, this.activePickups);
+    this.progressionPanel?.update(this.saved, this.encounters, this.progressError);
   }
 
   private collectPickups(): void {
     if (!this.saved || !this.player || !this.level) return;
     const player = this.player;
-    for (const pickup of this.pickups) {
-      if (this.collected.has(pickup.id) || this.pendingClaims.has(pickup.id)
-        || !this.level.platforms.some(platform => platform.id === pickup.platformId)) continue;
+    for (const pickup of this.activePickups) {
+      if (!pickup.available || this.collected.has(pickup.id) || this.pendingClaims.has(pickup.id)) continue;
       const dx = pickup.x - Math.max(player.x, Math.min(player.x + player.width, pickup.x));
       const dy = pickup.y - Math.max(player.y, Math.min(player.y + player.height, pickup.y));
       if (dx * dx + dy * dy > 64) continue;
       this.pendingClaims.add(pickup.id);
       const run = this.run;
-      void requestProgression({ type: 'progress:collect', url: location.href, index: pickup.index })
+      void requestProgression({ type: 'progress:collect', url: location.href, logicalKey: pickup.logicalKey, index: pickup.index })
         .then(state => this.acceptProgress(state, run))
         .catch(error => this.showProgressError(error, run))
         .finally(() => { if (run === this.run) this.pendingClaims.delete(pickup.id); });
@@ -386,20 +383,29 @@ export class Game {
   private tick = (now: number): void => {
     if (!this.active) return;
     if (location.href !== this.lastUrl) {
+      const identityChanged = pageSeedKey(location.href) !== pageSeedKey(this.lastUrl);
       this.lastUrl = location.href;
-      this.designs = sceneryDesigns(location.href);
-      this.scenery.placements = placeScenery(this.designs, this.level!.platforms, this.scenery.placements);
-      const encounter = encounterForUrl(location.href);
-      if (encounter.id !== this.encounter?.id) {
-        this.encounter = encounter;
+      if (identityChanged) {
+        this.designs = sceneryDesigns(location.href);
+        this.scenery.placements = placeScenery(this.designs, this.geometry!.registryPlatforms);
+        this.encounters = [];
         this.pickups = [];
+        this.activePickups.length = 0;
+        this.pickupRevision = -1;
         this.refreshPickups();
-        this.progressionPanel?.update(this.saved ?? null, encounter, this.progressError);
       }
+      this.schedule();
     }
+    // One measurement transaction per frame: every consumer sees the same endpoints.
+    this.geometry!.sampleMotion();
+    this.clearance!.sampleMotion();
+    if (this.geometry!.needsRebuild || this.clearance!.needsRebuild) this.schedule();
+    if (now >= this.nextBoundsRead) this.measurePageBounds();
+    this.refreshScenery();
     const elapsed = this.last ? Math.min((now - this.last) / 1000, 0.1) : 0;
     this.last = now;
     const input = this.input!, player = this.player!, level = this.level!;
+    const previousY = player.y;
     if (input.focused && !this.stranded) {
       if (input.jump) this.jumpBuffer = 0.13;
       input.jump = false;
@@ -424,7 +430,7 @@ export class Game {
         this.accumulator -= dt;
         this.collectPickups();
         this.rememberStanding();
-        if (outsidePage(player, this.pageHeight)) {
+        if (fellBelowViewport(player, previousY, scrollY + innerHeight) || outsidePage(player, this.pageHeight)) {
           if (!this.restoreLastStanding()) {
             // No real checkpoint exists (empty page or removed surface). Stop the
             // fall without inventing a floor or relocating into the viewport.
@@ -434,7 +440,11 @@ export class Game {
           break;
         }
       }
-      if (steps) this.commitMotion();
+      if (!steps) {
+        carryBody(player, level.platforms);
+        this.rememberStanding();
+      }
+      this.commitMotion();
     } else {
       input.clear();
       this.accumulator = 0;
@@ -445,7 +455,7 @@ export class Game {
       this.commitMotion();
     }
     if (Math.abs(player.x - this.inspectedX) > 200 || Math.abs(player.y - this.inspectedY) > 200) this.schedule();
-    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.pickups, this.collected, this.jumpMultiplier > 1);
+    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.activePickups, this.collected, this.jumpMultiplier > 1);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
       const offscreen = player.x + player.width < scrollX || player.x > scrollX + innerWidth
@@ -455,8 +465,7 @@ export class Game {
         : offscreen ? 'Character offscreen · scroll back or use Respawn'
         : input.focused ? 'Game focused · explore the page' : 'Paused · page controls are free';
       const ornaments = this.scenery.ready ? this.scenery.placements.filter(item => item.visible).length : 0;
-      this.materialStatus!.textContent = this.sceneryStale ? 'Material: rebuilding text protection'
-        : !this.scenery.ready ? 'Material blocked: text/animation inspection incomplete'
+      this.materialStatus!.textContent = !this.scenery.ready ? 'Material blocked: inspection limit reached'
         : ornaments ? `Material: ${ornaments} eligible surfaces` : 'Material: no wide native surfaces here';
       if (this.debug) {
         const p = this.player!;
@@ -473,11 +482,10 @@ export class Game {
     this.progressionPanel?.dispose();
     this.progressionPanel = undefined;
     this.pickups = [];
+    this.activePickups.length = 0;
     this.pendingClaims.clear();
     cancelAnimationFrame(this.frame);
     clearTimeout(this.timer);
-    clearInterval(this.motionTimer);
-    this.motionTimer = 0;
     this.timer = 0;
     this.abort?.abort();
     this.input?.dispose();

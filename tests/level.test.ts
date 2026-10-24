@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLevel, outsidePage } from '../src/level';
-import { MOTION, type Platform } from '../src/types';
-import { createPlayer } from '../src/physics';
+import { buildLevel, fellBelowViewport, outsidePage } from '../src/engine/level';
+import { MOTION, type Platform } from '../src/engine/types';
+import { createPlayer, respawnOnPlatform, stepBody } from '../src/engine/physics';
 
 Object.assign(globalThis, { scrollX: 0, scrollY: 0, innerWidth: 1440, innerHeight: 900 });
 
@@ -52,4 +52,64 @@ test('only falling below the document bottom triggers recovery', () => {
   body.y = 100;
   body.x = 5000;
   assert.equal(outsidePage(body, 5000), false);
+});
+
+test('a descending airborne character recovers once its top passes below the viewport', () => {
+  const body = createPlayer(20, 901);
+  body.vy = 120;
+  assert.equal(fellBelowViewport(body, 899, 900), true);
+  body.y = 900;
+  assert.equal(fellBelowViewport(body, 899, 900), false);
+  body.y = 890;
+  assert.equal(fellBelowViewport(body, 880, 900), false);
+});
+
+test('scrolling above a stationary offscreen character is not a falling exit', () => {
+  const body = createPlayer(20, 1800);
+  assert.equal(fellBelowViewport(body, 1800, 900), false);
+  // Even a stale downward velocity cannot turn a scroll-only update into a fall.
+  body.vy = 100;
+  assert.equal(fellBelowViewport(body, 1800, 800), false);
+});
+
+test('ascending and motionless airborne characters below the viewport do not recover', () => {
+  const body = createPlayer(20, 1800);
+  body.vy = -100;
+  assert.equal(fellBelowViewport(body, 1801, 900), false);
+  body.vy = 0;
+  assert.equal(fellBelowViewport(body, 1799, 900), false);
+});
+
+test('a grounded character remains attached outside both viewport and document', () => {
+  const body = createPlayer(20, 1800);
+  body.grounded = true;
+  body.platformId = 'offscreen-image';
+  body.vy = 100;
+  assert.equal(fellBelowViewport(body, 1700, 900), false);
+  assert.equal(outsidePage(body, 1000), false);
+});
+
+test('viewport recovery follows scrolled world-space bounds without a horizontal exit rule', () => {
+  const body = createPlayer(5000, 1901);
+  body.vy = 100;
+  assert.equal(fellBelowViewport(body, 1900, 1900), true);
+  assert.equal(fellBelowViewport(body, 1900, 2000), false);
+});
+
+test('viewport fall recovery returns to the retained checkpoint without centering it onscreen', () => {
+  const platform: Platform = { id: 'checkpoint', x: 300, y: 1400, width: 200 };
+  const body = createPlayer(50, 899);
+  body.vy = 500;
+  const previousY = body.y;
+  stepBody(body, [], MOTION.step);
+  assert.equal(fellBelowViewport(body, previousY, 900), true);
+  respawnOnPlatform(body, platform, 40);
+  assert.equal(body.x, 340);
+  assert.equal(body.y, 1400 - MOTION.height);
+  assert.equal(body.platformId, platform.id);
+  const checkpointY = body.y;
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.grounded, true);
+  assert.equal(fellBelowViewport(body, checkpointY, 900), false);
+  assert.equal(outsidePage(body, 1000), false);
 });

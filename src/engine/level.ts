@@ -26,7 +26,15 @@ export function buildLevel(platforms: Platform[]): Level {
   return { platforms, spawn };
 }
 
-/** Falling below the document is recovery; leaving the viewport alone is not. */
+/** Grounded riders remain attached even beyond the document bounds. */
 export function outsidePage(body: Body, height: number): boolean {
-  return body.y > height + 64;
+  return !body.grounded && body.y > height + 64;
+}
+
+/**
+ * Recover only after actual downward motion leaves the entire character below the viewport.
+ * previousY is the world-space top before this frame's physics, so scrolling alone is inert.
+ */
+export function fellBelowViewport(body: Body, previousY: number, viewportBottom: number): boolean {
+  return !body.grounded && body.vy > 0 && body.y > previousY && body.y > viewportBottom;
 }

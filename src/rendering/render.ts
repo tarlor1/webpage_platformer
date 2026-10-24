@@ -1,7 +1,7 @@
-import type { Body, Level } from './types';
+import type { Body, Level } from '../engine/types';
 import { drawScenery } from './scenery-art';
 import type { SceneryScene } from './scenery-types';
-import type { PagePickup } from './progression-types';
+import type { PagePickup } from '../progression/progression-types';
 export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: Body, debug: boolean, facing: number, scenery: SceneryScene, pickups: readonly PagePickup[], collected: ReadonlySet<string>, jumpBoots: boolean): void {
   const sx = scrollX, sy = scrollY;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
@@ -22,7 +22,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
     ctx.restore();
   }
   for (const pickup of pickups) {
-    if (collected.has(pickup.id) || !level.platforms.some(platform => platform.id === pickup.platformId)) continue;
+    if (!pickup.available || collected.has(pickup.id)
+      || pickup.x + 8 < sx || pickup.x - 8 > sx + innerWidth
+      || pickup.y + 8 < sy || pickup.y - 8 > sy + innerHeight) continue;
     ctx.fillStyle = '#e7b24f';
     ctx.strokeStyle = '#704c25';
     ctx.lineWidth = 2;
@@ -31,7 +33,13 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   }
   for (const p of level.platforms) {
     if (debug) {
-      ctx.strokeStyle = p.moving ? '#e5b755' : '#17b8b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.width, p.y); ctx.stroke();
+      const strip = scenery.ready ? scenery.placements.find(placement => placement.visible && placement.platformId === p.id) : undefined;
+      ctx.strokeStyle = p.moving ? '#e5b755' : '#17b8b0'; ctx.lineWidth = 2; ctx.beginPath();
+      if (strip) {
+        if (strip.x > p.x) { ctx.moveTo(p.x, p.y); ctx.lineTo(strip.x, p.y); }
+        if (strip.x + strip.width < p.x + p.width) { ctx.moveTo(strip.x + strip.width, p.y); ctx.lineTo(p.x + p.width, p.y); }
+      } else { ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.width, p.y); }
+      ctx.stroke();
     }
     if (debug) {
       const label = (p.label ?? 'DOM').slice(0, 28);

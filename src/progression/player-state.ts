@@ -1,4 +1,4 @@
-import { coinId, encounterForUrl } from './encounters';
+import { coinId, encounterForPlatform } from './encounters';
 import type { Equipment, PlayerState } from './progression-types';
 
 export interface PlayerTransition {
@@ -9,7 +9,7 @@ export interface PlayerTransition {
 
 export function createPlayerState(): PlayerState {
   return {
-    version: 1,
+    version: 2,
     revision: 0,
     coins: 0,
     xp: 0,
@@ -38,7 +38,9 @@ function equipment(value: unknown): value is Equipment {
   return typeof item.id === 'string' && item.id.length > 0
     && typeof item.name === 'string' && item.name.length > 0
     && item.slot === 'boots' && item.rarity === 'rare'
-    && item.jumpMultiplier === 1.2
+    && typeof item.jumpMultiplier === 'number' && Number.isFinite(item.jumpMultiplier)
+    && item.jumpMultiplier >= 1.15 && item.jumpMultiplier <= 1.25
+    && (item.color === undefined || (typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color)))
     && typeof item.description === 'string';
 }
 
@@ -46,8 +48,10 @@ function equipment(value: unknown): value is Equipment {
 export function readPlayerState(value: unknown): PlayerState {
   if (value === undefined) return createPlayerState();
   if (typeof value !== 'object' || value === null) throw new Error('Saved player state is invalid. Progress was not changed.');
-  const state = value as Partial<PlayerState>;
-  if (state.version !== 1) throw new Error('Saved player state has an unsupported version. Progress was not changed.');
+  const state = value as Partial<Omit<PlayerState, 'version'>> & { version?: unknown };
+  if (state.version !== 2 && state.version !== 1) {
+    throw new Error('Saved player state has an unsupported version. Progress was not changed.');
+  }
   if (!nonnegativeInteger(state.revision)
     || !nonnegativeInteger(state.coins)
     || !nonnegativeInteger(state.xp)
@@ -67,7 +71,8 @@ export function readPlayerState(value: unknown): PlayerState {
   if (state.equippedItemId !== null && (typeof state.equippedItemId !== 'string' || !owned.has(state.equippedItemId))) {
     throw new Error('Saved equipped item is not owned. Progress was not changed.');
   }
-  return state as PlayerState;
+  // Legacy IDs remain untouched: old page-wide claims cannot be mapped to absent platform keys.
+  return state.version === 2 ? state as PlayerState : { ...state, version: 2 } as PlayerState;
 }
 
 function increment(value: number, amount: number): number {
@@ -76,11 +81,11 @@ function increment(value: number, amount: number): number {
   return next;
 }
 
-/** Resolve rewards from the URL, never from equipment or amounts supplied by a caller. */
-export function collectCoin(state: PlayerState, url: string, index: number): PlayerTransition {
-  const encounter = encounterForUrl(url);
+/** Resolve rewards from both identities, never from equipment or amounts supplied by a caller. */
+export function collectCoin(state: PlayerState, url: string, logicalKey: string, index: number): PlayerTransition {
+  const encounter = encounterForPlatform(url, logicalKey);
   if (!Number.isInteger(index) || index < 0 || index >= encounter.coinCount) {
-    throw new Error('Coin index is outside this page encounter.');
+    throw new Error('Coin index is outside this platform encounter.');
   }
   const id = coinId(encounter, index);
   if (state.collectedCoins.includes(id)) return { state, duplicate: true, reward: null };

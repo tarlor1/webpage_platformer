@@ -1,6 +1,12 @@
 /** Measured webpage top edge. Previous bounds describe the last simulated frame. */
 export interface Platform {
   id: string;
+  /** Stable content identity shared by wrapped segments and visual clones. */
+  logicalKey?: string;
+  /** A recycled/looped surface has no continuous path between these endpoints. */
+  discontinuous?: boolean;
+  /** Layout moved this top without a physical path; existing riders still follow it. */
+  reflow?: boolean;
   x: number;
   y: number;
   width: number;

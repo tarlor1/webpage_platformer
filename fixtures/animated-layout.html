@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Animated layout and media surfaces</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 3200px; background: #eef1f4; color: #203746; font: 16px/1.5 system-ui; }
+  header { padding: 18px 28px; max-width: 680px; }
+  button { font: inherit; padding: 12px; border: 2px solid #4a626c; background: #f8e9c9; color: #203746; }
+  .nav { position: fixed; top: 110px; left: 24px; width: 260px; z-index: 2; }
+  .carrier { position: absolute; top: 500px; left: calc(50% - 240px); width: 480px; height: 64px; }
+  .crossing { position: absolute; top: 1050px; left: 24px; width: 260px; }
+  .gallery { position: absolute; top: 900px; left: 35%; width: 300px; height: 190px; overflow: clip; display: flex; }
+  .gallery img { flex: none; width: 380px; height: 250px; transform: translate(-40px,-30px); }
+  .media { position: absolute; top: 1450px; left: 15%; display: grid; gap: 70px; grid-template-columns: 320px 320px; }
+  video, iframe { width: 320px; height: 180px; border: 3px solid #4a626c; background: #274b60; }
+  .wrapped { position: absolute; top: 1950px; left: 20%; width: min(60%, 420px); display: flex; gap: 12px; }
+  .wrapped p { margin: 0; }
+  canvas.effects { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; }
+</style>
+<canvas class="effects" aria-hidden="true"></canvas>
+<header>
+  <h1>Animated layout and media surfaces</h1>
+  <p>Start on the wide carrier. Tracks and coins should follow it without flickering. Drop below the viewport to return to the last platform.</p>
+  <button id="motion">Pause motion</button>
+  <button id="loop">Reset carrier to opposite side</button>
+  <button id="insert">Insert a new platform</button>
+</header>
+<button class="nav" id="navbar">Fixed navbar surface</button>
+<button class="carrier" id="carrier" data-item-id="carrier">Moving native carrier</button>
+<button class="crossing">Scrolling content crosses the navbar</button>
+<div class="gallery"><img id="cropped" alt="Clipped landscape" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='380' height='250'%3E%3Cpath fill='%2387b7cc' d='M0 0H380V250H0z'/%3E%3Cpath fill='%235c826d' d='M0 220L110 40L230 210L320 80L380 220V250H0z'/%3E%3C/svg%3E"></div>
+<div class="media"><video id="video" controls aria-label="Native video frame"></video><iframe id="embedded" title="Embedded player boundary" srcdoc="<style>body{background:#35576b;color:white;font:20px system-ui}</style><p>Embedded player frame</p>"></iframe></div>
+<div class="wrapped"><p>Wrapped text remains one logical reward platform when viewport widths change. Each rendered line is still an original one-way collision surface.</p></div>
+<script>
+  const carrier = document.querySelector('#carrier');
+  let running = true, elapsed = 0, last = performance.now(), reset = false;
+  document.querySelector('#motion').onclick = event => { running = !running; event.target.textContent = running ? 'Pause motion' : 'Run motion'; };
+  document.querySelector('#loop').onclick = () => { reset = !reset; };
+  document.querySelector('#insert').onclick = () => {
+    if (document.querySelector('#new-platform')) return;
+    const button = document.createElement('button');
+    button.id = 'new-platform'; button.dataset.itemId = 'inserted-content';
+    button.textContent = 'Newly discovered original platform';
+    button.style.cssText = 'position:absolute;top:650px;left:25%;width:400px';
+    document.body.append(button);
+  };
+  function frame(now) {
+    if (running) elapsed += Math.min(50, now - last);
+    last = now;
+    const x = Math.sin(elapsed / 1500) * 70 + (reset ? -innerWidth : 0);
+    carrier.style.transform = `translate(${x}px, ${Math.sin(elapsed / 2200) * 28}px)`;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</html>

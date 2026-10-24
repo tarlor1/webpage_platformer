@@ -1,8 +1,9 @@
-import { coinId } from './encounters';
-import type { Equipment, PageEncounter, PlayerState } from './progression-types';
+import { coinId } from '../progression/encounters';
+import type { Equipment, PageEncounter, PlayerState } from '../progression/progression-types';
 
 interface EquipmentRow {
   element: HTMLLIElement;
+  icon: HTMLElement;
   name: HTMLElement;
   description: HTMLElement;
   effect: HTMLElement;
@@ -11,7 +12,7 @@ interface EquipmentRow {
 }
 
 export interface ProgressionPanel {
-  update(state: PlayerState | null, encounter: PageEncounter, error?: string): void;
+  update(state: PlayerState | null, encounters: readonly PageEncounter[], error?: string): void;
   dispose(): void;
 }
 
@@ -95,7 +96,7 @@ export function mountProgressionUI(
   const listeners = new AbortController();
   const rows = new Map<string, EquipmentRow>();
   let currentState: PlayerState | null = null;
-  let currentEncounter: PageEncounter | null = null;
+  let currentEncounters: readonly PageEncounter[] = [];
   let externalError = '';
   let equipError = '';
   let pending = false;
@@ -131,7 +132,7 @@ export function mountProgressionUI(
     button.dataset.equipmentId = item.id;
     element.append(heading, description, effect, button);
     list.append(element);
-    return { element, name, description, effect, marker, button };
+    return { element, icon, name, description, effect, marker, button };
   }
 
   function render(): void {
@@ -144,17 +145,24 @@ export function mountProgressionUI(
     setText(xpNext, state ? `${progress}/100 to next level` : 'Loading…');
     xpBar.value = progress;
     xpBar.setAttribute('aria-valuetext', state ? `${progress} of 100 XP toward next level` : 'Loading experience');
-    const encounter = currentEncounter;
-    const collected = state && encounter
-      ? Array.from({ length: encounter.coinCount }, (_, index) => coinId(encounter, index))
-        .filter(id => state.collectedCoins.includes(id)).length
-      : 0;
-    setText(page, state && encounter
-      ? `Page exploration: ${collected}/${encounter.coinCount} coins collected`
-      : `Page exploration: —/${encounter?.coinCount ?? 3} coins collected`);
+    const encounters = currentEncounters;
+    let total = 0, collected = 0, completed = 0;
+    const claimed = new Set(state?.collectedCoins ?? []);
+    for (const encounter of encounters) {
+      total += encounter.coinCount;
+      let platformCoins = 0;
+      for (let index = 0; index < encounter.coinCount; index++) {
+        if (claimed.has(coinId(encounter, index))) platformCoins++;
+      }
+      collected += platformCoins;
+      if (platformCoins === encounter.coinCount) completed++;
+    }
+    setText(page, state
+      ? `Discovered platforms: ${completed}/${encounters.length} complete · ${collected}/${total} coins collected`
+      : `Discovered platforms: ${encounters.length} · loading saved coin progress…`);
     setText(summary, state ? `Inventory (${state.inventory.length})` : 'Inventory');
     setText(empty, state
-      ? 'No equipment yet. Rare jump boots are found in about 1 in 10 completed page explorations.'
+      ? 'Rare jump boots occur on about 1% of platforms and are automatically awarded after collecting that platform’s coins.'
       : 'Loading saved inventory…');
     empty.hidden = !!state?.inventory.length;
 
@@ -173,6 +181,7 @@ export function mountProgressionUI(
       }
       const equipped = state?.equippedItemId === item.id;
       setText(row.name, item.name);
+      row.icon.style.borderColor = item.color ?? '#ad874e';
       setText(row.description, item.description);
       const heightBonus = Math.round((item.jumpMultiplier ** 2 - 1) * 100);
       setText(row.effect, `Jump power ×${item.jumpMultiplier} · ${heightBonus}% higher jumps`);
@@ -221,10 +230,10 @@ export function mountProgressionUI(
 
   render();
   return {
-    update(state, encounter, error) {
+    update(state, encounters, error) {
       if (disposed) return;
       currentState = state;
-      currentEncounter = encounter;
+      currentEncounters = encounters;
       externalError = error ?? '';
       render();
     },

@@ -1,4 +1,4 @@
-import { Game } from './game';
+import { Game } from '../engine/game';
 
 // The isolated-world global survives repeated executeScript injections on this document.
 const scope = globalThis as typeof globalThis & { __steelSteamControllerInstalled?: boolean };

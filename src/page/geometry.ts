@@ -1,11 +1,13 @@
-import { OVERLAY_ID, type Platform } from './types';
+import { OVERLAY_ID, type Platform } from '../engine/types';
+import { logicalSurfaceKey } from './surface-identity';
+import { isDecorativeCanvas } from '../rendering/text-clearance';
 
 const MAX_NODES = 6000;
 const MAX_RECTS = 1600;
 const MAX_PLATFORMS = 220;
 const ANIMATION_DISCOVERY_MS = 250;
 const MAX_ANIMATIONS = 1000;
-const IGNORED_TAGS: Record<string, true> = { SCRIPT: true, STYLE: true, NOSCRIPT: true, TEMPLATE: true, HEAD: true, IFRAME: true, OBJECT: true, EMBED: true };
+const IGNORED_TAGS: Record<string, true> = { SCRIPT: true, STYLE: true, NOSCRIPT: true, TEMPLATE: true, HEAD: true, OBJECT: true, EMBED: true };
 const CONTROL_TAGS: Record<string, true> = { BUTTON: true, INPUT: true, SELECT: true, TEXTAREA: true };
 
 interface Area { left: number; right: number; top: number; bottom: number }
@@ -18,6 +20,7 @@ interface Source {
   platforms: Map<number, Platform>;
   animated: boolean;
   pending: number;
+  continuous: boolean;
   documentScroll: boolean;
   scrollers: Element[];
 }
@@ -36,6 +39,12 @@ export class PageGeometry {
   private nextId = 1;
   private sources: Source[] = [];
   private platforms: Platform[] = [];
+  private selected = new Set<Platform>();
+  /** Connected discovered surfaces; viewport selection never owns their lifetime. */
+  private registry: Platform[] = [];
+  registryRevision = 0;
+  selectionRevision = 0;
+  get registryPlatforms(): readonly Platform[] { return this.registry; }
   private animationTargets = new Set<Element>();
   private nextAnimationDiscovery = 0;
   private viewport: Area = { left: 0, right: 0, top: 0, bottom: 0 };
@@ -102,6 +111,13 @@ export class PageGeometry {
       walk(target, true);
     }
     if (document.body) walk(document.body, false);
+    // Discovery budgets and scrolling must not evict previously discovered terrain.
+    for (const source of this.sources) {
+      if (source.node.isConnected && !seen.has(source.node)) {
+        if (measurement.rects < MAX_RECTS) collect(source.node);
+        else nextSources.push(source);
+      }
+    }
     for (const source of this.sources) if (!nextSources.includes(source)) source.range?.detach();
     this.sources = nextSources;
     this.selectPlatforms();
@@ -131,7 +147,10 @@ export class PageGeometry {
   markScrolled(target: EventTarget | null): void {
     const documentScroll = !target || target === document || target === window || target === document.scrollingElement;
     for (const source of this.sources) {
-      if (documentScroll ? source.documentScroll : target instanceof Element && source.scrollers.includes(target)) source.pending = 3;
+      if (documentScroll ? source.documentScroll : target instanceof Element && source.scrollers.includes(target)) {
+        source.pending = 3;
+        source.continuous = true;
+      }
     }
   }
 
@@ -149,18 +168,25 @@ export class PageGeometry {
   }
 
   /** Mutation targets include JS transforms on a surface or any of its ancestors. */
-  markChanged(target: Node): void {
+  markChanged(target: Node, continuous = false): void {
     const stylesheet = target instanceof Element && (target.tagName === 'STYLE' || target.tagName === 'LINK')
       || target.parentElement?.tagName === 'STYLE';
     for (const source of this.sources) {
-      if (stylesheet || target === source.node || target.contains(source.node) || source.element.contains(target)) source.pending = 3;
+      if (stylesheet || target === source.node || target.contains(source.node) || source.element.contains(target)) {
+        source.pending = 3;
+        source.continuous ||= continuous;
+      }
     }
   }
 
   clear(): void {
     for (const source of this.sources) source.range?.detach();
     this.sources = [];
+    this.selected.clear();
     this.platforms.length = 0;
+    this.registry.length = 0;
+    this.registryRevision++;
+    this.selectionRevision++;
     this.animationTargets.clear();
     this.ids = new WeakMap();
     this.nextId = 1;
@@ -185,8 +211,7 @@ export class PageGeometry {
   }
 
   private hidden(element: Element, measurement: Measurement): boolean {
-    if (this.excluded(element) || element.hasAttribute('hidden')
-      || element.hasAttribute('inert') || element.getAttribute('aria-hidden') === 'true') return true;
+    if (this.excluded(element) || element.hasAttribute('hidden')) return true;
     const style = this.styleFor(element, measurement);
     return style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
       || style.contentVisibility === 'hidden' || Number(style.opacity) === 0;
@@ -206,16 +231,22 @@ export class PageGeometry {
       range = document.createRange();
     } else {
       const control = CONTROL_TAGS[element.tagName] || element.getAttribute('role') === 'button' || element.getAttribute('role') === 'textbox';
-      const image = element.tagName === 'IMG' || element.tagName === 'VIDEO' || element.tagName === 'CANVAS' || element.getAttribute('role') === 'img';
-      if ((!control && !image) || element.getAttribute('type') === 'hidden'
-        || element.getAttribute('role') === 'presentation' || element.getAttribute('role') === 'none') return;
+      const style = this.styleFor(element, measurement);
+      const background = style.backgroundImage !== 'none';
+      const image = element.tagName === 'IMG' || element.tagName === 'VIDEO' || element.tagName === 'IFRAME'
+        || element.tagName === 'CANVAS' || element.getAttribute('role') === 'img' || background;
+      if ((!control && !image) || element.getAttribute('type') === 'hidden') return;
+      const bounds = element.getBoundingClientRect();
+      if (isDecorativeCanvas(element, style, bounds)) return;
+      if (background && !control && !/^(IMG|VIDEO|IFRAME|CANVAS)$/.test(element.tagName)
+        && (bounds.width > innerWidth * 1.2 || bounds.height > innerHeight * 1.2)) return;
       // Empty alt is an accessibility choice, not evidence that an image has no
       // visible physical surface. Large hero and promotional images count too.
       label = (element.getAttribute('aria-label') || element.getAttribute('alt')
         || element.getAttribute('value') || element.textContent || element.tagName).trim().slice(0, 70);
     }
     if (!this.ids.has(node)) this.ids.set(node, this.nextId++);
-    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0, documentScroll: false, scrollers: [] };
+    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0, continuous: false, documentScroll: false, scrollers: [] };
   }
 
   private measureSource(source: Source, measurement: Measurement, rebuilding: boolean): void {
@@ -245,6 +276,7 @@ export class PageGeometry {
       hidden = Number.parseFloat(style.fontSize) < 8 || style.color === 'transparent' || style.color === 'rgba(0, 0, 0, 0)';
     }
     let moved = false;
+    const logicalKey = logicalSurfaceKey(source.node);
     if (!hidden) {
       let rects: DOMRectList | DOMRect[];
       if (source.range) {
@@ -261,33 +293,40 @@ export class PageGeometry {
         const rect = rects[index];
         let left = rect.left;
         let right = rect.right;
+        let top = rect.top;
+        let bottom = rect.bottom;
         if (clipped) {
-          if (rect.top < clipped.top || rect.top >= clipped.bottom) continue;
+          if (source.text && (top < clipped.top || top >= clipped.bottom)) continue;
+          top = Math.max(top, clipped.top);
+          bottom = Math.min(bottom, clipped.bottom);
           left = Math.max(left, clipped.left);
           right = Math.min(right, clipped.right);
         }
         const x = left + measurement.scrollX;
-        const y = rect.top + measurement.scrollY;
+        const y = top + measurement.scrollY;
         const width = right - left;
         const retained = this.retained?.source === source && this.retained.index === index;
-        if (width < 30 || rect.height < 4 || (source.text && rect.height > 80)
-          || !Number.isFinite(x + y + width) || (!retained && !this.intersects({ left: x, right: x + width, top: y, bottom: y + rect.height }))) continue;
+        if (width < 30 || bottom - top < 4 || (source.text && rect.height > 80)
+          || !Number.isFinite(x + y + width)) continue;
+        if (!retained && !old.has(index)
+          && !this.intersects({ left: x, right: x + width, top: y, bottom: bottom + measurement.scrollY })) continue;
         let platform = old.get(index);
         const changed = !!platform && (platform.x !== x || platform.y !== y || platform.width !== width);
-        const continuous = source.animated || !!platform?.moving;
+        const identityChanged = !!platform?.logicalKey && platform.logicalKey !== logicalKey;
+        if (identityChanged) this.registryRevision++;
         if (!platform) {
           platform = { id: `dom:${this.ids.get(source.node)}:${index}`, x, y, width, previousX: x, previousY: y, previousWidth: width };
         } else {
+          // Large horizontal resets have no inferred swept path. This conservative
+          // fallback may detach at an ambiguous seam; ordinary scrolling is vertical.
+          platform.discontinuous ||= identityChanged || Math.abs(x - platform.x) > Math.max(innerWidth * 0.75, platform.width * 2);
+          platform.reflow ||= changed && !source.animated && !source.continuous;
           platform.x = x;
           platform.y = y;
           platform.width = width;
-          if (rebuilding && !continuous) {
-            platform.previousX = x;
-            platform.previousY = y;
-            platform.previousWidth = width;
-          }
         }
         platform.label = source.label;
+        platform.logicalKey = logicalKey;
         platform.moving = source.animated || (!rebuilding && changed);
         moved ||= changed;
         visible.set(index, platform);
@@ -295,6 +334,7 @@ export class PageGeometry {
     }
     source.platforms = visible;
     source.pending = moved && !rebuilding ? 2 : Math.max(0, source.pending - 1);
+    if (!source.pending) source.continuous = false;
   }
 
   private updateAreas(): void {
@@ -319,6 +359,9 @@ export class PageGeometry {
   private selectPlatforms(): void {
     const candidates: Platform[] = [];
     for (const source of this.sources) for (const platform of source.platforms.values()) candidates.push(platform);
+    if (candidates.length !== this.registry.length || candidates.some((platform, index) => platform !== this.registry[index])) this.registryRevision++;
+    this.registry.length = 0;
+    this.registry.push(...candidates);
     const centerX = window.scrollX + window.innerWidth / 2;
     const centerY = window.scrollY + window.innerHeight / 2;
     const distance = (platform: Platform): number => {
@@ -327,7 +370,6 @@ export class PageGeometry {
     };
     candidates.sort((a, b) => Number(b.id === this.retained?.id) - Number(a.id === this.retained?.id)
       || Number(this.inInterest(b)) - Number(this.inInterest(a)) || distance(a) - distance(b));
-    this.platforms.length = 0;
     const selected: Platform[] = [];
     for (const candidate of candidates) {
       // Coincident static sources describe one visible top. Never collapse
@@ -337,7 +379,14 @@ export class PageGeometry {
       selected.push(candidate);
       if (selected.length === MAX_PLATFORMS) break;
     }
-    this.platforms.push(...selected.sort((a, b) => a.y - b.y || a.x - b.x));
+    selected.sort((a, b) => a.y - b.y || a.x - b.x);
+    if (selected.length !== this.selected.size || selected.some(platform => !this.selected.has(platform))) {
+      this.selectionRevision++;
+      this.selected.clear();
+      for (const platform of selected) this.selected.add(platform);
+    }
+    this.platforms.length = 0;
+    this.platforms.push(...selected);
   }
 
   private hasAnimatedAncestor(element: Element): boolean {

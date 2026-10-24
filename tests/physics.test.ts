@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from '../src/physics';
-import { MOTION, type Platform } from '../src/types';
+import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from '../src/engine/physics';
+import { MOTION, type Platform } from '../src/engine/types';
 
 const ledges: Platform[] = [
   { id: 'upper', x: 0, y: 100, width: 200 },
@@ -97,43 +97,28 @@ for (const destination of [20, 180]) {
 }
 
 for (const destinationMotion of [0, -40]) {
-  test(`a descending carrier hands off to a ${destinationMotion ? 'moving' : 'stationary'} lower ledge at impact`, () => {
+  test(`a descending carrier retains support while crossing a ${destinationMotion ? 'moving' : 'stationary'} ledge`, () => {
     const carrier: Platform = { id: 'carrier', previousX: 0, x: 80, previousY: 100, y: 180, width: 200 };
     const lower: Platform = { id: 'lower', previousX: 0, x: destinationMotion, y: 140, width: 200 };
     const body = standing(carrier);
     body.vx = 24;
     stepBody(body, [carrier, lower], MOTION.step);
-    // Supported feet move from 100 to 180, meeting the lower top halfway through the step.
-    const expectedX = 20 + body.vx * MOTION.step + 80 / 2 + destinationMotion / 2;
-    assert.ok(Math.abs(body.x - expectedX) < 1e-10);
-    assert.equal(body.y + body.height, lower.y);
-    assert.equal(body.platformId, lower.id);
+    assert.equal(body.x, 100 + body.vx * MOTION.step);
+    assert.equal(body.y + body.height, carrier.y);
+    assert.equal(body.platformId, carrier.id);
     assert.equal(body.grounded, true);
     assert.equal(body.vy, 0);
-
-    carrier.previousX = carrier.x;
-    carrier.x += 80;
-    carrier.previousY = carrier.y;
-    carrier.y += 80;
-    lower.previousX = lower.x;
-    lower.x += destinationMotion;
-    const handoffX = body.x;
-    stepBody(body, [carrier, lower], MOTION.step);
-    assert.ok(Math.abs(body.x - (handoffX + body.vx * MOTION.step + destinationMotion)) < 1e-10);
-    assert.equal(body.y + body.height, lower.y);
-    assert.equal(body.platformId, lower.id);
   });
 }
 
-test('a rising top lifts a rider off stationary support within fractional geometry bounds', () => {
-  const support: Platform = { id: 'support', x: 0, y: 100, width: 200 };
+test('a rising top cannot steal a rider from valid stationary support', () => {
+  const support: Platform = { id: 'navbar', x: 0, y: 100, width: 200 };
   const lift: Platform = { id: 'lift', previousX: -40, x: 40, previousY: 180, y: 20, width: 200 };
   const body = standing(support);
-  stepBody(body, [support, lift], MOTION.step, 0.25, 0.75);
-  // This interval moves the lift from y=140 to y=60; it reaches supported feet at t=1/2.
-  assert.equal(body.x, 40);
-  assert.equal(body.y + body.height, 60);
-  assert.equal(body.platformId, lift.id);
+  stepBody(body, [lift, support], MOTION.step, 0.25, 0.75);
+  assert.equal(body.x, 20);
+  assert.equal(body.y + body.height, support.y);
+  assert.equal(body.platformId, support.id);
   assert.equal(body.grounded, true);
   assert.equal(body.vy, 0);
 });
@@ -351,4 +336,123 @@ test('recovery stays within a previous platform that has become narrower', () =>
   respawnOnPlatform(body, platform, 180);
   assert.ok(body.x >= platform.x && body.x + body.width <= platform.x + platform.width);
   assert.equal(body.y + body.height, platform.y);
+});
+
+test('walking beyond a support edge releases contact instead of retaining an invisible floor', () => {
+  const platform: Platform = { id: 'edge', x: 0, y: 100, width: 100 };
+  const body = standing(platform, 80);
+  body.vx = 240;
+  stepBody(body, [platform], 0.1);
+  assert.equal(body.grounded, false);
+  assert.equal(body.platformId, undefined);
+  stepBody(body, [platform], MOTION.step);
+  assert.ok(body.y > 70);
+  assert.ok(body.vy > 0);
+});
+
+test('a shrinking platform preserves the local offset until the edge no longer supports it', () => {
+  const platform: Platform = { id: 'resize', previousX: 0, x: 50, y: 100, previousWidth: 200, width: 120 };
+  const body = standing(platform, 110);
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.x, 160);
+  assert.equal(body.grounded, true);
+  platform.previousX = platform.x;
+  platform.previousWidth = platform.width;
+  platform.width = 100;
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.x, 160);
+  assert.equal(body.grounded, false);
+});
+
+test('paused width shrink releases an unsupported local position', () => {
+  const platform: Platform = { id: 'resize-paused', x: 0, y: 100, previousWidth: 200, width: 60 };
+  const body = standing(platform, 100);
+  assert.equal(carryBody(body, [platform]), false);
+  assert.equal(body.x, 100);
+  assert.equal(body.grounded, false);
+});
+
+test('a recycled support detaches at its old world position without opposite-side transport', () => {
+  const platform: Platform = {
+    id: 'loop', previousX: 900, x: 0, previousY: 100, y: 100, width: 200, discontinuous: true,
+  };
+  const body = standing(platform, 920);
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.x, 920);
+  assert.equal(body.grounded, false);
+  assert.equal(body.platformId, undefined);
+  assert.ok(body.y > 70);
+});
+
+test('a reset beneath the same feet cannot immediately reclaim its former rider', () => {
+  const platform: Platform = {
+    id: 'reset', x: 0, previousY: 100, y: 99, width: 200, discontinuous: true,
+  };
+  const body = standing(platform);
+  for (let i = 0; i < 4; i++) stepBody(body, [platform], MOTION.step, i / 4, (i + 1) / 4);
+  assert.equal(body.grounded, false);
+  assert.equal(body.platformId, undefined);
+  assert.equal(body.x, 20);
+});
+
+test('paused support recycling preserves the world position without a new landing', () => {
+  const platform: Platform = {
+    id: 'paused-loop', previousX: 900, x: 0, previousY: 100, y: 40, width: 200, discontinuous: true,
+  };
+  const body = standing(platform, 920);
+  assert.equal(carryBody(body, [platform]), false);
+  assert.equal(body.x, 920);
+  assert.equal(body.y, 70);
+  assert.equal(body.grounded, false);
+});
+
+test('removing or invalidating support releases its rider', () => {
+  for (const platforms of [[], [{ id: 'removed', x: 0, y: 100, width: 0 }]]) {
+    const body = standing({ id: 'removed', x: 0, y: 100, width: 200 });
+    stepBody(body, platforms, MOTION.step);
+    assert.equal(body.grounded, false);
+    assert.equal(body.platformId, undefined);
+    assert.ok(body.y > 70);
+  }
+});
+
+test('checkpoint recovery restores a moved surface and resumes continuous local transport', () => {
+  const platform: Platform = { id: 'checkpoint', x: 200, y: 300, width: 200 };
+  const body = createPlayer(500, 2000);
+  body.vy = 500;
+  respawnOnPlatform(body, platform, 40);
+  platform.previousX = platform.x;
+  platform.previousY = platform.y;
+  platform.x += 60;
+  platform.y -= 20;
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.x, 300);
+  assert.equal(body.y + body.height, 280);
+  assert.equal(body.platformId, platform.id);
+  assert.equal(body.grounded, true);
+});
+
+test('static reflow does not sweep a top into an airborne character', () => {
+  const platform: Platform = { id: 'reflow', x: 0, previousY: 200, y: 20, width: 200, reflow: true };
+  const body = createPlayer(20, 70);
+  body.vy = 100;
+  stepBody(body, [platform], MOTION.step);
+  assert.equal(body.grounded, false);
+  assert.equal(body.platformId, undefined);
+  assert.ok(body.y > 70);
+});
+
+test('static reflow carries its existing rider and permits landing on the new endpoint', () => {
+  const platform: Platform = { id: 'reflow', previousX: 0, x: 40, previousY: 100, y: 80, width: 200, reflow: true };
+  const rider = standing(platform, 20);
+  stepBody(rider, [platform], MOTION.step);
+  assert.equal(rider.x, 60);
+  assert.equal(rider.y + rider.height, 80);
+  assert.equal(rider.platformId, platform.id);
+  const falling = createPlayer(70, 49);
+  falling.vy = 200;
+  stepBody(falling, [platform], MOTION.step);
+  assert.equal(falling.x, 70);
+  assert.equal(falling.y + falling.height, 80);
+  assert.equal(falling.platformId, platform.id);
 });

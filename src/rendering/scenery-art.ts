@@ -1,5 +1,5 @@
 import type { SceneryDesign, SceneryPlacement } from './scenery-types';
-import { pageSeedKey } from './page-identity';
+import { pageSeedKey } from '../page/page-identity';
 
 const VERSION = 3;
 const KINDS: readonly SceneryDesign['kind'][] = ['rail', 'road'];

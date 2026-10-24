@@ -13,6 +13,7 @@ export interface SceneryPlacement {
   platformId: string;
   fraction: number;
   x: number;
+  /** Texture top in document pixels; its center is the native collision edge. */
   y: number;
   width: number;
   height: number;

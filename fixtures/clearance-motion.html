@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cached clearance: compositor canvas and scripted motion</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #203b43; background: #f6f1e6; font: 16px/1.4 system-ui, sans-serif; }
+    main { position: relative; max-width: 960px; margin: auto; padding: 48px 28px; }
+    section { position: relative; margin: 48px 0; padding: 24px; border: 1px solid #a9b4b0; min-height: 260px; background: #ffffffb3; }
+    h2 { margin: 0 0 120px; }
+    .gl-wrap { position: fixed; inset: 0; pointer-events: none; }
+    .gl-wrap canvas { display: block; width: 100%; height: 100%; }
+    #scripted { position: absolute; top: 70px; left: 22px; width: 360px; transform-origin: left center; }
+    #scripted span { display: inline-block; background: #f3d99b; }
+    #rotated { position: absolute; top: 145px; left: 26px; display: inline-block; animation: turn 3s cubic-bezier(.2,1.5,.8,-.5) infinite alternate; }
+    @keyframes turn { from { transform: rotate(-9deg) scale(.9); } to { transform: rotate(10deg) scale(1.1); } }
+    #nested { height: 220px; overflow: auto; border: 2px solid #91aaa5; padding: 20px; }
+    #nested article { min-height: 145px; }
+    #native-chart { display: block; width: 300px; height: 110px; }
+    .tail { height: 1100px; }
+    #unrelated { position: fixed; top: 12px; right: 12px; width: 18px; height: 18px; background: #bc914a; }
+    #unrelated.alternate { border-radius: 50%; }
+    button { font: inherit; padding: 8px 14px; }
+  </style>
+</head>
+<body>
+  <div class="gl-wrap w-embed"><canvas id="rive-effect"></canvas></div>
+  <div id="unrelated"></div>
+  <main>
+    <h1>Cached masks follow the same frame as the native surfaces</h1>
+    <p>The viewport canvas is decorative. The small named canvas below contains native readable content and stays protected. Scrolling and unrelated class writes must leave track membership unchanged.</p>
+    <section>
+      <h2>Script transforms, opacity, clipping and non-translation animation</h2>
+      <div id="scripted"><span>Visible moving text stays unobscured at its current position.</span></div>
+      <span id="rotated">Rotated native copy with overshooting easing</span>
+      <button id="insert">Insert a native label immediately</button>
+    </section>
+    <section>
+      <h2>Native media remains protected</h2>
+      <canvas id="native-chart" width="600" height="220" role="img" aria-label="Native production chart with readable labels"></canvas>
+    </section>
+    <section>
+      <h2>Nested scrolling preserves clipped masks</h2>
+      <div id="nested" tabindex="0">
+        <article><h3>First original shelf</h3><p>Visible shelf text and its supporting surfaces move together.</p></article>
+        <article><h3>Second original shelf</h3><p aria-hidden="true">Visible text remains protected even when marked aria-hidden.</p></article>
+        <article><h3>Third original shelf</h3><p>Offscreen lines do not leave stale swept masks behind.</p></article>
+      </div>
+    </section>
+    <section class="tail"><h2>Scroll away and return</h2><p>Track design, source membership and anchor fractions remain stable.</p></section>
+  </main>
+  <script>
+    const effect = document.querySelector('#rive-effect');
+    const effectPaint = effect.getContext('2d');
+    effect.width = 1200; effect.height = 800;
+    effectPaint.strokeStyle = '#90aaa322';
+    for (let x = 0; x < 1200; x += 70) { effectPaint.beginPath(); effectPaint.moveTo(x, 0); effectPaint.lineTo(x + 200, 800); effectPaint.stroke(); }
+    const chart = document.querySelector('#native-chart').getContext('2d');
+    chart.fillStyle = '#dce7e4'; chart.fillRect(0, 0, 600, 220);
+    chart.fillStyle = '#203b43'; chart.font = '30px sans-serif'; chart.fillText('Production: 84 units', 24, 70);
+    chart.font = '20px sans-serif'; chart.fillText('Readable native canvas content', 24, 125);
+    const scripted = document.querySelector('#scripted');
+    const nested = document.querySelector('#nested');
+    let animate = true;
+    function frame(time) {
+      if (animate) {
+        scripted.style.transform = `translate(${70 + Math.sin(time / 950) * 65}px, ${Math.cos(time / 1100) * 15}px) rotate(${Math.sin(time / 1300) * 3}deg)`;
+        scripted.style.opacity = Math.sin(time / 1200) > -.85 ? '1' : '0';
+        scripted.style.clipPath = `inset(0 ${Math.round((1 + Math.sin(time / 1700)) * 12)}px 0 0)`;
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    setInterval(() => document.querySelector('#unrelated').classList.toggle('alternate'), 700);
+    document.querySelector('#insert').onclick = () => {
+      const label = document.createElement('p'); label.textContent = 'Newly inserted native text is protected before deferred full discovery.';
+      document.querySelector('#insert').before(label);
+    };
+    window.clearanceFixture = { pause: () => { animate = false; }, resume: () => { animate = true; }, nested };
+  </script>
+</body>
+</html>

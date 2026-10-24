@@ -13,6 +13,11 @@ function overlaps(x: number, width: number, platformX: number, platformWidth: nu
   return x + width > platformX + 1 && x < platformX + platformWidth - 1;
 }
 
+function validTop(platform: Platform): boolean {
+  return Number.isFinite(platform.x) && Number.isFinite(platform.y)
+    && Number.isFinite(platform.width) && platform.width > 2;
+}
+
 export function createPlayer(x: number, y: number): Body {
   return { x, y, width: MOTION.width, height: MOTION.height, vx: 0, vy: 0, grounded: false };
 }
@@ -48,7 +53,7 @@ function riderPlatform(body: Body, platforms: readonly Platform[], from: number)
   }
   if (!body.grounded) return undefined;
   for (const p of platforms) {
-    if (p.id !== body.platformId || detachedTops.get(body) === p.id) continue;
+    if (p.id !== body.platformId || detachedTops.get(body) === p.id || p.discontinuous || !validTop(p)) continue;
     const x = at(p.previousX, p.x, from);
     const y = at(p.previousY, p.y, from);
     const width = at(p.previousWidth, p.width, from);
@@ -84,12 +89,18 @@ export function carryBody(body: Body, platforms: readonly Platform[], from = 0, 
     body.platformId = undefined;
     return false;
   }
+  // Preserve support-local distance from the left edge, including during width changes.
   body.x += at(rider.previousX, rider.x, to) - at(rider.previousX, rider.x, from);
-  body.y += at(rider.previousY, rider.y, to) - at(rider.previousY, rider.y, from);
+  body.y = at(rider.previousY, rider.y, to) - body.height;
+  if (!overlaps(body.x, body.width, at(rider.previousX, rider.x, to), at(rider.previousWidth, rider.width, to))) {
+    body.grounded = false;
+    body.platformId = undefined;
+    return false;
+  }
   return true;
 }
 
-/** Sweep feet relative to interpolated one-way tops; the earliest crossing owns the remaining ride. */
+/** Lock valid support; airborne feet sweep relative to interpolated one-way tops. */
 export function stepBody(body: Body, platforms: readonly Platform[], dt: number, from = 0, to = 1): void {
   releaseDetachedTop(body, platforms, from);
   const rider = riderPlatform(body, platforms, from);
@@ -107,14 +118,21 @@ export function stepBody(body: Body, platforms: readonly Platform[], dt: number,
   body.grounded = false;
   body.platformId = undefined;
   const newBottom = body.y + body.height;
+  if (rider && overlaps(body.x, body.width, at(rider.previousX, rider.x, to), at(rider.previousWidth, rider.width, to))) {
+    body.y = at(rider.previousY, rider.y, to) - body.height;
+    body.vy = 0;
+    body.grounded = true;
+    body.platformId = rider.id;
+    return;
+  }
   const detachedId = detachedTops.get(body);
-  let landing = rider;
+  let landing: Platform | undefined;
   let landingTime = Infinity;
   for (const p of platforms) {
-    // Existing support is the fallback, so its resting contact cannot hide a later interception.
-    if (p === rider || p.id === detachedId) continue;
-    const startY = at(p.previousY, p.y, from);
-    const endY = at(p.previousY, p.y, to);
+    // Walkoff cannot reclaim its old top in the same step. Reset surfaces have no swept path.
+    if (p === rider || p.id === detachedId || p.discontinuous || !validTop(p)) continue;
+    const startY = p.reflow ? p.y : at(p.previousY, p.y, from);
+    const endY = p.reflow ? p.y : at(p.previousY, p.y, to);
     const startGap = oldBottom - startY;
     const endGap = newBottom - endY;
     const relativeTravel = endGap - startGap;
@@ -123,17 +141,16 @@ export function stepBody(body: Body, platforms: readonly Platform[], dt: number,
     if (time >= landingTime) continue;
     const fraction = from + (to - from) * time;
     const crossingX = oldX + (body.x - oldX) * time;
-    if (!overlaps(crossingX, body.width, at(p.previousX, p.x, fraction), at(p.previousWidth, p.width, fraction))) continue;
+    if (!overlaps(crossingX, body.width, p.reflow ? p.x : at(p.previousX, p.x, fraction),
+      p.reflow ? p.width : at(p.previousWidth, p.width, fraction))) continue;
     landing = p;
     landingTime = time;
   }
   if (landing) {
-    // Keep the old carrier only until impact, then take the new carrier's remaining motion.
-    if (landing !== rider) {
-      const deltaX = at(landing.previousX, landing.x, to) - at(landing.previousX, landing.x, from);
-      body.x += (deltaX - carryX) * (1 - landingTime);
-    }
-    body.y = at(landing.previousY, landing.y, to) - body.height;
+    // Take the landing surface's remaining motion after the airborne impact.
+    const deltaX = landing.reflow ? 0 : at(landing.previousX, landing.x, to) - at(landing.previousX, landing.x, from);
+    body.x += (deltaX - carryX) * (1 - landingTime);
+    body.y = (landing.reflow ? landing.y : at(landing.previousY, landing.y, to)) - body.height;
     body.vy = 0;
     body.grounded = true;
     body.platformId = landing.id;
