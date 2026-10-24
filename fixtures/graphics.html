@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SVG and Canvas playground</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #202326; color: #edf1ee; font: 16px/1.6 system-ui, sans-serif; }
+    header, main, footer { max-width: 1120px; margin: auto; padding: 28px; }
+    h1, h2, h3 { line-height: 1.3; }
+    h1 { margin-top: 0; }
+    h2 { color: #efc17a; }
+    p { color: #c6d1d2; }
+    button, input { font: inherit; }
+    button { padding: 9px 15px; color: #fff; background: #35474e; border: 1px solid #93a4ab; border-radius: 5px; cursor: pointer; }
+    button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #72e5d3; outline-offset: 4px; }
+    a { color: #8ee2d7; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; align-items: start; }
+    article { min-width: 0; padding: 20px; background: #293238; border: 1px solid #66787e; border-radius: 10px; }
+    article h3 { margin-top: 0; }
+    section { margin-bottom: 85px; }
+    .category { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-block: 1px solid #6c6c6c; background: #272727; font-size: 14px; font-weight: 700; }
+    .icon { display: block; width: 24px; height: 24px; flex: none; }
+    .icon-row { display: flex; align-items: center; flex-wrap: wrap; gap: 26px; margin: 24px 0; }
+    .large-icon { width: 72px; height: 72px; }
+    .graphic { display: block; width: 100%; height: auto; background: #15242b; border: 1px solid #7b969d; }
+    .css-shapes { display: flex; align-items: center; justify-content: space-around; min-height: 170px; gap: 20px; }
+    .css-circle { width: 76px; height: 76px; border-radius: 50%; background: #edbc63; border: 5px solid #94703a; }
+    .css-diamond { width: 66px; height: 66px; transform: rotate(45deg); background: #70cbbd; border: 4px solid #def9ee; }
+    .css-track { height: 18px; margin: 24px 0; border-block: 4px solid #c6d1d2; background: repeating-linear-gradient(90deg, #a47749 0 10px, transparent 10px 24px); }
+    .motion-lane { min-height: 270px; padding: 25px 0; }
+    .moving { width: min(280px, 65%); animation: slide 3s ease-in-out infinite alternate paused; }
+    .running .moving { animation-play-state: running; }
+    @keyframes slide { to { transform: translateX(40vw); } }
+    .course { min-height: 700px; }
+    .landing { display: block; margin: 65px 0; width: min(60%, 400px); text-align: left; }
+    .landing:nth-of-type(even) { margin-left: auto; }
+    @media (prefers-reduced-motion: reduce) { .moving { animation-duration: 8s; } }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } header, main, footer { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SVG and Canvas playground</h1>
+    <p>Start Steel &amp; Steam here, then use <strong>Debug</strong> to inspect the detected terrain. Compare inline SVGs, SVG images, canvas drawings, and HTML/CSS shapes. Scroll to test the player locator.</p>
+    <p>SVG and canvas graphics are single media elements: their internal drawn lines are not separate DOM platforms. Compare the debug edges with the visible artwork and its surrounding rectangle.</p>
+    <div class="toolbar">
+      <button id="motion" type="button" aria-pressed="false">Start moving graphics</button>
+      <button id="repaint" type="button">Repaint canvas</button>
+      <a href="#course">Jump to lower course</a>
+    </div>
+  </header>
+
+  <main>
+    <section aria-labelledby="icons-heading">
+      <h2 id="icons-heading">Small icons and a Gaming row</h2>
+      <div class="grid">
+        <article>
+          <h3>Inline SVG strokes</h3>
+          <div class="category">
+            <svg id="controller-icon" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 3 2 7v10l10 5 10-5V7l-6-4-4 2Z"/>
+              <path d="M7 9v6M4 12h6"/>
+              <circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/>
+              <circle cx="18" cy="14" r="1" fill="currentColor" stroke="none"/>
+            </svg>
+            <span>Gaming</span>
+          </div>
+          <div class="icon-row">
+            <svg class="large-icon" viewBox="0 0 24 24" fill="none" stroke="#efc17a" stroke-width="1.5" aria-label="Gold coin" role="img">
+              <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="6"/><path d="M12 8v8m-2-6 2-2 2 2"/>
+            </svg>
+            <svg class="large-icon" viewBox="0 0 24 24" fill="none" stroke="#a9dcd2" stroke-width="2" aria-label="Railway tracks" role="img">
+              <path d="M7 2 4 22M17 2l3 20M6 6h12M5 11h14M4 16h16M3 21h18"/>
+            </svg>
+          </div>
+          <p>A small SVG beside ordinary text, plus two larger stroke-based icons.</p>
+        </article>
+        <article>
+          <h3>The controller drawn with Canvas 2D</h3>
+          <canvas id="icon-canvas" class="graphic" width="480" height="200" role="img" aria-label="Canvas-drawn controller icons at three sizes">Three outlined game controllers.</canvas>
+          <p>The same paths drawn using <code>ctx.stroke()</code>, at three scales.</p>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="media-heading">
+      <h2 id="media-heading">Large graphics with internal shapes</h2>
+      <div class="grid">
+        <article>
+          <h3>Inline SVG: rails, coin, and platforms</h3>
+          <svg id="scene-svg" class="graphic" viewBox="0 0 480 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SVG railway scene with floating platforms and a gold coin">
+            <rect width="480" height="240" fill="#15242b"/>
+            <g fill="#6ba99b" stroke="#bce9d8" stroke-width="3">
+              <rect x="25" y="160" width="130" height="20" rx="4"/>
+              <rect x="185" y="105" width="120" height="20" rx="4"/>
+              <rect x="340" y="50" width="110" height="20" rx="4"/>
+            </g>
+            <g fill="#a47749">
+              <rect x="30" y="200" width="14" height="30"/><rect x="90" y="200" width="14" height="30"/>
+              <rect x="150" y="200" width="14" height="30"/><rect x="210" y="200" width="14" height="30"/>
+              <rect x="270" y="200" width="14" height="30"/><rect x="330" y="200" width="14" height="30"/><rect x="390" y="200" width="14" height="30"/>
+            </g>
+            <path d="M15 205H465M15 224H465" fill="none" stroke="#d7e4e5" stroke-width="5"/>
+            <circle cx="245" cy="65" r="20" fill="#efc17a" stroke="#94703a" stroke-width="4"/>
+            <path d="M245 54v22" stroke="#fff1c5" stroke-width="4"/>
+          </svg>
+          <p>Internal rectangles and paths are SVG artwork, rather than separate HTML elements.</p>
+        </article>
+        <article>
+          <h3>Canvas: filled shapes and strokes</h3>
+          <canvas id="scene-canvas" class="graphic" width="480" height="240" role="img" aria-label="Canvas railway scene with floating platforms and a gold coin">A railway scene with a coin and platforms.</canvas>
+          <p>Use Repaint canvas to change pixels without changing the canvas element's size or position.</p>
+        </article>
+        <article>
+          <h3>The SVG loaded as an image</h3>
+          <img id="svg-image" class="graphic" width="480" height="240" alt="Image version of the SVG railway scene">
+          <p>The same SVG scene inside an ordinary <code>&lt;img&gt;</code>.</p>
+        </article>
+        <article>
+          <h3>HTML elements styled with CSS</h3>
+          <div class="css-shapes"><div class="css-circle"></div><div class="css-diamond"></div></div>
+          <div class="css-track"></div>
+          <button type="button">An ordinary HTML button</button>
+          <p>These shapes use backgrounds, borders, rounded corners, and a CSS transform.</p>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="motion-heading">
+      <h2 id="motion-heading">A moving SVG image</h2>
+      <p>Start moving graphics, then try standing on this image and scrolling while it moves.</p>
+      <div class="motion-lane"><img id="moving-image" class="graphic moving" width="480" height="240" alt="Moving railway image"></div>
+    </section>
+
+    <section id="course" class="course" aria-labelledby="course-heading">
+      <h2 id="course-heading">Scrolling and ordinary controls</h2>
+      <p>Real HTML buttons provide a comparison below the graphics. Use Find player after scrolling away.</p>
+      <button class="landing" type="button">First landing</button>
+      <button class="landing" type="button">Second landing</button>
+      <button class="landing" type="button">Third landing</button>
+      <a href="#">Back to the top</a>
+    </section>
+  </main>
+  <footer><p>All artwork is local SVG, CSS, or Canvas 2D. No external assets or libraries.</p></footer>
+
+  <script>
+    const outline = new Path2D('M8 3 2 7v10l10 5 10-5V7l-6-4-4 2Z');
+    const dpad = new Path2D('M7 9v6M4 12h6');
+    let alternateColor = false;
+
+    // Match the backing resolution to the display while drawing in logical pixels.
+    function canvasContext(canvas, width, height) {
+      const ratio = window.devicePixelRatio || 1;
+      const displayedWidth = canvas.getBoundingClientRect().width;
+      const scale = displayedWidth * ratio / width;
+      canvas.width = Math.round(displayedWidth * ratio);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      return ctx;
+    }
+
+    function drawCanvases() {
+      const icons = canvasContext(document.querySelector('#icon-canvas'), 480, 200);
+      icons.strokeStyle = '#edf1ee'; icons.fillStyle = '#edf1ee';
+      icons.lineWidth = 1.8; icons.lineCap = 'round'; icons.lineJoin = 'round';
+      for (const [x, y, scale] of [[40, 80, 1], [150, 65, 2], [290, 30, 5]]) {
+        icons.save(); icons.translate(x, y); icons.scale(scale, scale);
+        icons.stroke(outline); icons.stroke(dpad);
+        for (const [cx, cy] of [[16, 10], [18, 14]]) {
+          icons.beginPath(); icons.arc(cx, cy, 1, 0, Math.PI * 2); icons.fill();
+        }
+        icons.restore();
+      }
+
+      const ctx = canvasContext(document.querySelector('#scene-canvas'), 480, 240);
+      ctx.fillStyle = '#15242b'; ctx.fillRect(0, 0, 480, 240);
+      ctx.fillStyle = alternateColor ? '#ad8ac5' : '#6ba99b';
+      ctx.strokeStyle = '#bce9d8'; ctx.lineWidth = 3;
+      for (const [x, y, width] of [[25, 160, 130], [185, 105, 120], [340, 50, 110]]) {
+        ctx.fillRect(x, y, width, 20); ctx.strokeRect(x, y, width, 20);
+      }
+      ctx.fillStyle = '#a47749';
+      for (let x = 30; x < 440; x += 60) ctx.fillRect(x, 200, 14, 30);
+      ctx.strokeStyle = '#d7e4e5'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(15, 205); ctx.lineTo(465, 205); ctx.moveTo(15, 224); ctx.lineTo(465, 224); ctx.stroke();
+      ctx.fillStyle = '#efc17a'; ctx.strokeStyle = '#94703a'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(245, 65, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#fff1c5'; ctx.beginPath(); ctx.moveTo(245, 54); ctx.lineTo(245, 76); ctx.stroke();
+    }
+
+    const svg = new XMLSerializer().serializeToString(document.querySelector('#scene-svg'));
+    const imageSource = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    document.querySelector('#svg-image').src = imageSource;
+    document.querySelector('#moving-image').src = imageSource;
+
+    document.querySelector('#motion').addEventListener('click', event => {
+      const running = document.body.classList.toggle('running');
+      event.currentTarget.textContent = running ? 'Pause moving graphics' : 'Start moving graphics';
+      event.currentTarget.setAttribute('aria-pressed', String(running));
+    });
+    document.querySelector('#repaint').addEventListener('click', () => {
+      alternateColor = !alternateColor;
+      drawCanvases();
+    });
+    window.addEventListener('resize', drawCanvases);
+    drawCanvases();
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>SVG and Canvas Terrain</title>
+<style>body{font:16px system-ui;background:#f2f2f2;padding:32px}svg,canvas{border:1px dotted #aaa;margin:16px 0;display:block} .tip{max-width:750px}</style></head>
+<body><h1>Vector terrain test</h1><p class="tip">Enable Debug in Steel & Steam. Solid SVG shapes and transparent Canvas 2D shapes should expose top-edge platforms. Dashed container outlines are CSS and may also count as painted surfaces.</p>
+<svg width="650" height="230" viewBox="0 0 650 230" aria-label="SVG test surface">
+<rect x="20" y="155" width="180" height="22" fill="#4276aa"/>
+<path d="M245 125 H480" stroke="#1b8b64" stroke-width="9" fill="none"/>
+<polygon points="500,170 630,170 620,205 505,205" fill="#bd6b30"/>
+<g transform="translate(50 -20)"><rect x="230" y="200" width="170" height="15" fill="#a04dab"/></g>
+</svg>
+<canvas id="test" width="650" height="230" aria-label="Transparent Canvas 2D platforms"></canvas>
+<script>
+const c=document.getElementById('test');const ctx=c.getContext('2d');
+ctx.fillStyle='#28679c';ctx.fillRect(25,145,190,22);
+ctx.fillStyle='#b66a21';ctx.fillRect(270,105,210,24);
+ctx.strokeStyle='#4b913e';ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(490,185);ctx.lineTo(635,185);ctx.stroke();
+</script></body></html>
