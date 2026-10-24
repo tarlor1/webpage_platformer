@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rendering lab: overlapping edges and incremental content</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; color:#263b46; background:#f2efe6; font:15px/1.45 system-ui,sans-serif; }
+  header { max-width:1200px; margin:20px auto; padding:0 20px; }
+  h1 { margin:0 0 8px; font-size:25px; }
+  p { margin:8px 0; }
+  nav { display:flex; flex-wrap:wrap; gap:8px; }
+  button { color:#263b46; background:#e0e9e8; border:2px solid #70858c; border-radius:3px; font:inherit; cursor:pointer; }
+  nav button { padding:8px 12px; }
+  main { max-width:1200px; margin:auto; padding:0 20px 80px; }
+  .wide { display:block; width:100%; height:65px; margin:24px 0; }
+  .transparent-control { display:grid; place-items:center; width:100%; height:65px; margin:24px 0; }
+  .nested { position:relative; height:65px; background-image:linear-gradient(#dae4e6,#cad9db); }
+  .nested-inner { position:absolute; inset:0; background-image:linear-gradient(#d4e1e3,#d4e1e3); display:grid; place-items:center; }
+  .overlap { position:relative; height:95px; margin:28px 0; }
+  .back,.front { position:absolute; top:0; height:65px; width:65%; }
+  .back { left:0; background:#d8d1bb; }
+  .front { right:0; z-index:2; background:#d5e5de; }
+  #coin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(105px,1fr)); gap:14px 10px; margin:28px 0; }
+  #coin-grid button { height:48px; font-size:12px; }
+  .wrapped { display:flex; gap:22px; max-width:900px; margin:35px 0; }
+  .wrapped p { flex:1; margin:0; }
+  #player-zone { min-height:230px; margin:45px 0; }
+  video { display:block; width:min(640px,100%); height:220px; border:3px solid #71878b; background:#405d6b; }
+  video[hidden] { display:none; }
+  #archive { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin-top:60px; }
+  #archive article { padding:14px; background:#e4e6e0; border:1px solid #aab6b5; }
+  #archive h3 { margin:0 0 8px; font-size:17px; }
+  #archive button { padding:7px 16px; }
+</style>
+<header>
+  <h1>Rendering lab</h1>
+  <p>Original webpage controls and nested boxes provide terrain. Their full top edges should receive one material or none, without text coverage. Moving the character must not change which uncollected coins are visible.</p>
+  <nav>
+    <button id="toggle-player" type="button">Hide video frame</button>
+    <button id="replace-player" type="button">Replace video frame</button>
+    <button id="load-archive" type="button">Load 2,000 content cards</button>
+  </nav>
+</header>
+<main>
+  <button class="wide" id="wide" data-item-id="wide-native-control" type="button">Wide original control: full-width artwork without stretching</button>
+  <div class="transparent-control" id="transparent-control" role="button" tabindex="0" data-item-id="transparent-native-control">Transparent original control: its detected top edge should still be marked</div>
+  <div class="nested" id="nested" data-item-id="nested-native-box">
+    <div class="nested-inner" id="nested-inner" data-item-id="nested-inner-box">Nested divs describe one visible edge</div>
+  </div>
+  <div class="overlap">
+    <button class="back" id="back" type="button">Partly covered native edge</button>
+    <button class="front" id="front" type="button">Frontmost continuous native edge</button>
+  </div>
+  <section id="coin-grid" aria-label="Dense original controls"></section>
+  <div class="wrapped">
+    <p>Wrapped text stays playable, but receives no broken rail fragments when its glyphs prevent a clean continuous strip.</p>
+    <p>Resizing this flex row changes line wrapping. Platform identities and rewards should remain stable across the new geometry.</p>
+  </div>
+  <div id="player-zone"><video id="demo-player" data-item-id="native-demo-player" controls aria-label="Native demo video frame"></video></div>
+  <section id="archive" aria-label="Dynamically loaded archive"></section>
+</main>
+<script>
+  const grid = document.querySelector('#coin-grid');
+  const fragment = document.createDocumentFragment();
+  for (let index = 0; index < 120; index++) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.dataset.itemId = `lab-control-${index}`;
+    button.textContent = `Control ${index + 1}`; fragment.append(button);
+  }
+  grid.append(fragment);
+  document.querySelector('#toggle-player').onclick = event => {
+    const video = document.querySelector('#demo-player');
+    video.hidden = !video.hidden;
+    event.target.textContent = video.hidden ? 'Show video frame' : 'Hide video frame';
+  };
+  document.querySelector('#replace-player').onclick = () => {
+    const old = document.querySelector('#demo-player');
+    old.replaceWith(old.cloneNode(true));
+  };
+  document.querySelector('#load-archive').onclick = event => {
+    if (document.querySelector('#archive').childElementCount) return;
+    const cards = document.createDocumentFragment();
+    for (let index = 0; index < 2000; index++) {
+      const card = document.createElement('article'); card.dataset.itemId = `archive-card-${index}`;
+      const title = document.createElement('h3'); title.textContent = `Archive entry ${index + 1}`;
+      const text = document.createElement('p'); text.textContent = 'Dynamically inserted readable content must be inspected in small batches without hiding unrelated safe platform decoration.';
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = `Open entry ${index + 1}`;
+      card.append(title,text,button); cards.append(card);
+    }
+    document.querySelector('#archive').append(cards);
+    event.target.textContent = '2,000 content cards loaded';
+  };
+</script>
+</html>

@@ -1,10 +1,9 @@
 import { coinId, eligibleLootPlatform } from './encounters';
 import type { CoinPickup, EquipmentPickup, PageEncounter, PagePickup } from './progression-types';
-import { MOTION, type Body, type Platform } from '../engine/types';
+import { MOTION, type Platform } from '../engine/types';
 
 const EDGE_MARGIN = 3;
 const LOW_LIFT = 18;
-export const MAX_ACTIVE_PICKUPS = 24;
 // Semi-implicit fixed-step integration loses at most jump * step / 2 of ideal height.
 // Keep the highest coin inside the body swept by an ordinary stationary base jump.
 const SAFE_LIFT = Math.min(120, MOTION.height + MOTION.jump * MOTION.jump / (2 * MOTION.gravity)
@@ -89,30 +88,99 @@ export function updatePickups(pickups: readonly PagePickup[], platforms: readonl
   }
 }
 
-/** Reuse a bounded nearest-coin window; no per-step walk through the full page's loot. */
-export function selectActivePickups(
-  pickups: readonly PagePickup[],
-  player: Pick<Body, 'x' | 'y' | 'platformId'>,
-  output: PagePickup[] = [],
-): PagePickup[] {
-  output.length = 0;
-  for (const pickup of pickups) {
-    if (!pickup.available) continue;
-    const priority = pickup.kind === 'equipment' ? 0 : pickup.platformId === player.platformId ? 1 : 2;
-    const distance = Math.abs(pickup.x - player.x) + Math.abs(pickup.y - player.y);
-    let index = 0;
-    for (; index < output.length; index++) {
-      const current = output[index]!;
-      const currentPriority = current.kind === 'equipment' ? 0 : current.platformId === player.platformId ? 1 : 2;
-      const currentDistance = Math.abs(current.x - player.x) + Math.abs(current.y - player.y);
-      if (priority < currentPriority || priority === currentPriority
-        && (distance < currentDistance || distance === currentDistance && pickup.id < current.id)) break;
+const PICKUP_CELL_SIZE = 256;
+const COIN_RADIUS = 8;
+const EQUIPMENT_RADIUS = 11;
+
+interface PickupEntry {
+  pickup: PagePickup;
+  cellX: number;
+  cellY: number;
+  bucket: Set<PickupEntry>;
+  revision: number;
+}
+
+/** Cached page-wide anchors; viewport and contact queries only visit nearby cells. */
+export class PickupIndex {
+  private readonly entries = new Map<string, PickupEntry>();
+  private readonly rows = new Map<number, Map<number, Set<PickupEntry>>>();
+  private revision = 0;
+
+  update(pickups: readonly PagePickup[]): void {
+    const revision = ++this.revision;
+    for (const pickup of pickups) {
+      if (!pickup.available) continue;
+      const cellX = Math.floor(pickup.x / PICKUP_CELL_SIZE);
+      const cellY = Math.floor(pickup.y / PICKUP_CELL_SIZE);
+      let entry = this.entries.get(pickup.id);
+      if (!entry) {
+        const bucket = this.bucket(cellX, cellY);
+        entry = { pickup, cellX, cellY, bucket, revision };
+        bucket.add(entry);
+        this.entries.set(pickup.id, entry);
+      } else {
+        entry.pickup = pickup;
+        entry.revision = revision;
+        if (entry.cellX !== cellX || entry.cellY !== cellY) {
+          this.removeMembership(entry);
+          entry.cellX = cellX;
+          entry.cellY = cellY;
+          entry.bucket = this.bucket(cellX, cellY);
+          entry.bucket.add(entry);
+        }
+      }
     }
-    if (index >= MAX_ACTIVE_PICKUPS) continue;
-    const end = Math.min(output.length, MAX_ACTIVE_PICKUPS - 1);
-    if (output.length < MAX_ACTIVE_PICKUPS) output.push(pickup);
-    for (let move = end; move > index; move--) output[move] = output[move - 1]!;
-    output[index] = pickup;
+    for (const entry of this.entries.values()) {
+      if (entry.revision === revision) continue;
+      this.removeMembership(entry);
+      this.entries.delete(entry.pickup.id);
+    }
   }
-  return output;
+
+  query(bounds: { x: number; y: number; width: number; height: number }, output: PagePickup[]): void {
+    output.length = 0;
+    const right = bounds.x + bounds.width;
+    const bottom = bounds.y + bounds.height;
+    // Store each center once and expand the query by the largest sprite radius.
+    const minX = Math.floor((bounds.x - EQUIPMENT_RADIUS) / PICKUP_CELL_SIZE);
+    const maxX = Math.floor((right + EQUIPMENT_RADIUS) / PICKUP_CELL_SIZE);
+    const minY = Math.floor((bounds.y - EQUIPMENT_RADIUS) / PICKUP_CELL_SIZE);
+    const maxY = Math.floor((bottom + EQUIPMENT_RADIUS) / PICKUP_CELL_SIZE);
+    for (let y = minY; y <= maxY; y++) {
+      const row = this.rows.get(y);
+      if (!row) continue;
+      for (let x = minX; x <= maxX; x++) {
+        const bucket = row.get(x);
+        if (!bucket) continue;
+        for (const { pickup } of bucket) {
+          if (!pickup.available) continue;
+          const radius = pickup.kind === 'equipment' ? EQUIPMENT_RADIUS : COIN_RADIUS;
+          if (pickup.x + radius >= bounds.x && pickup.x - radius <= right
+            && pickup.y + radius >= bounds.y && pickup.y - radius <= bottom) output.push(pickup);
+        }
+      }
+    }
+  }
+
+  private bucket(x: number, y: number): Set<PickupEntry> {
+    let row = this.rows.get(y);
+    if (!row) {
+      row = new Map();
+      this.rows.set(y, row);
+    }
+    let bucket = row.get(x);
+    if (!bucket) {
+      bucket = new Set();
+      row.set(x, bucket);
+    }
+    return bucket;
+  }
+
+  private removeMembership(entry: PickupEntry): void {
+    entry.bucket.delete(entry);
+    if (entry.bucket.size !== 0) return;
+    const row = this.rows.get(entry.cellY)!;
+    row.delete(entry.cellX);
+    if (row.size === 0) this.rows.delete(entry.cellY);
+  }
 }

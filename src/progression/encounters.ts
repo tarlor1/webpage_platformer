@@ -5,6 +5,7 @@ import type { Platform } from '../engine/types';
 const VERSION = 2;
 const BOOT_NAMES = ['Springheel Boots', 'Skybound Boots', 'Piston Boots', 'Cloudstep Boots', 'Coppercoil Boots', 'Vaulting Boots'] as const;
 const BOOT_COLORS = ['#ad874e', '#8bb6ca', '#b9b3ff', '#7fe4d7', '#cf8d67', '#d5a653'] as const;
+const populationCache = new WeakMap<PageEncounter, { id: string; populated: boolean }>();
 
 function seededRandom(key: string): () => number {
   let state = 2166136261;
@@ -43,7 +44,12 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
 
 /** Population is sparse without changing existing encounter IDs, counts or rewards. */
 export function populatedEncounter(encounter: PageEncounter): boolean {
-  return !!encounter.equipment || seededRandom(`${encounter.id}:population-v1`)() % 10 === 0;
+  if (encounter.equipment) return true;
+  const cached = populationCache.get(encounter);
+  if (cached?.id === encounter.id) return cached.populated;
+  const populated = seededRandom(`${encounter.id}:population-v1`)() % 10 === 0;
+  populationCache.set(encounter, { id: encounter.id, populated });
+  return populated;
 }
 
 function startedEncounter(encounter: PageEncounter, collected?: ReadonlySet<string>): boolean {
@@ -66,6 +72,7 @@ export function discoverEncounters(
   platforms: readonly Platform[],
   known: readonly PageEncounter[] = [],
   collected?: ReadonlySet<string>,
+  definitions?: Map<string, PageEncounter>,
 ): PageEncounter[] {
   const seedKey = pageSeedKey(url);
   const encounters = known.filter(encounter => encounter.seedKey === seedKey
@@ -74,7 +81,12 @@ export function discoverEncounters(
   for (const platform of platforms) {
     if (!eligibleLootPlatform(platform) || seen.has(platform.logicalKey!)) continue;
     seen.add(platform.logicalKey!);
-    const encounter = encounterForPlatform(url, platform.logicalKey!);
+    const key = platform.logicalKey!;
+    let encounter = definitions?.get(key);
+    if (!encounter || encounter.seedKey !== seedKey) {
+      encounter = encounterForPlatform(url, key);
+      definitions?.set(key, encounter);
+    }
     if (populatedEncounter(encounter) || startedEncounter(encounter, collected)) encounters.push(encounter);
   }
   return encounters.sort((a, b) => a.logicalKey < b.logicalKey ? -1 : a.logicalKey > b.logicalKey ? 1 : 0);

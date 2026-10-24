@@ -1,4 +1,13 @@
-export interface Rect { x: number; y: number; width: number; height: number }
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind?: 'text' | 'media' | 'control' | 'pending';
+  element?: Element;
+  /** Protection expansion outside the visible native bounds, in document pixels. */
+  padding?: number;
+}
 export interface SceneryDesign {
   id: string;
   kind: 'rail' | 'road';
@@ -11,7 +20,7 @@ export interface SceneryDesign {
 export interface SceneryPlacement {
   design: SceneryDesign;
   platformId: string;
-  fraction: number;
+  logicalKey: string;
   x: number;
   /** Texture top in document pixels; its center is the native collision edge. */
   y: number;
