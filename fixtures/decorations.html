@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Original page: decoration clearance</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 40px; color: #263c45; background: #f5f1e6; font: 16px/1.45 system-ui, sans-serif; }
+    main { max-width: 1060px; margin: auto; }
+    h1 { margin: 0 0 12px; font-size: 30px; }
+    h2 { margin: 0; font-size: 22px; }
+    p { max-width: 780px; }
+    section { position: relative; margin: 36px 0; padding: 22px; border: 1px solid #baa98b; background: #fffcf4; }
+    .sparse { min-height: 330px; }
+    .sparse > h2 { margin-bottom: 116px; }
+    .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; }
+    .row > * { flex: 1; }
+    button, input, select, textarea { font: inherit; border: 1px solid #839299; border-radius: 3px; padding: 9px 12px; background: white; color: #263c45; }
+    button { cursor: pointer; }
+    .caption { margin: 7px 0 0; font-size: 12px; }
+    .small-labels { display: grid; grid-template-columns: 24px 24px 1fr; align-items: start; gap: 24px; margin: 40px 0 12px; }
+    .fine { font: 9px/1.25 Georgia, serif; max-width: 300px; }
+    .wrapped { width: 272px; font: 12px/1.05 Georgia, serif; margin: 0; }
+    .dense-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 36px; }
+    .image { display: block; width: 218px; height: 94px; }
+    .motion-zone { height: 285px; overflow: visible; }
+    .motion-zone h2 { margin-bottom: 110px; }
+    .moving-label { display: inline-block; position: absolute; left: 24px; top: 112px; padding: 2px 6px; background: #ffe5a6; animation: label-travel 4s ease-in-out infinite alternate; }
+    .moving-ancestor { position: absolute; left: 40px; top: 206px; animation: ancestor-travel 5s linear infinite alternate; }
+    .moving-ancestor span { font: 11px/1.2 Georgia, serif; background: #d5e9e5; }
+    #native-label { position: absolute; right: 36px; top: 160px; font-size: 11px; background: #eadff7; }
+    .js-motion-zone { min-height: 280px; }
+    #js-material { position: absolute; left: 24px; top: 190px; width: 260px; }
+    .dynamic-zone { min-height: 290px; }
+    .dynamic-zone h2 { margin-bottom: 120px; }
+    #new-copy { position: absolute; top: 82px; left: 28px; max-width: 570px; margin: 0; font: bold 13px/1.3 system-ui, sans-serif; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    [contenteditable] { min-height: 70px; padding: 10px; border: 1px solid #839299; }
+    .hidden-sample { display: none; }
+    .fixed-note { position: fixed; left: 18px; bottom: 18px; z-index: 3; width: 258px; padding: 12px; border: 2px solid #839299; background: #e7f0ed; box-shadow: 0 3px 12px #263c4526; }
+    .fixed-note p { margin: 0 0 8px; font-size: 12px; }
+    .fixed-note button { width: 100%; }
+    .sticky-zone { min-height: 660px; }
+    .sticky-note { position: sticky; top: 18px; width: min(100%, 540px); margin-top: 28px; padding: 16px; border: 2px solid #839299; background: #e7f0ed; }
+    .sticky-note p { margin: 0 0 12px; }
+    .sticky-tail { margin-top: 320px; }
+    .nested-zone { min-height: 490px; }
+    .nested-scroll { height: 245px; overflow: auto; padding: 18px; border: 2px solid #839299; background: #f1eee4; }
+    .nested-scroll article { min-height: 170px; padding: 14px 0; border-bottom: 1px solid #baa98b; }
+    .nested-scroll article p { max-width: 520px; }
+    .nested-scroll .wrapped { max-width: 272px; }
+    .return-zone { min-height: 720px; }
+    @keyframes label-travel { from { transform: translateX(0px); } to { transform: translateX(430px); } }
+    @keyframes ancestor-travel { from { transform: translate(0px, 0px); } to { transform: translate(300px, -90px); } }
+    @media (max-width: 760px) {
+      body { padding: 20px; }
+      .row, .dense-row { flex-wrap: wrap; }
+      .row > * { min-width: 210px; }
+      .controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <aside class="fixed-note" aria-label="Fixed native page controls">
+      <p>Fixed native text: I stay in this viewport corner while the document moves.</p>
+      <button type="button">Fixed reading-room help</button>
+    </aside>
+    <h1>Foundry reading room</h1>
+    <p>This is an ordinary page. Thin railway tracks and road strips may decorate original surface tops, but must leave text, controls, and images clear. Scroll down and back: each marking stays attached to its native surface.</p>
+
+    <section class="sparse">
+      <h2>Open space above original surfaces</h2>
+      <div class="row">
+        <div>
+          <p>Workshop notices</p>
+          <button type="button">Reserve a reading desk</button>
+          <p class="caption">The complete button is protected, including its empty padding.</p>
+        </div>
+        <div>
+          <img class="image" alt="Image containing the words STEAM ARCHIVE and Small lettering is part of the image" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='218' height='94'%3E%3Crect width='218' height='94' fill='%23d5e9e5'/%3E%3Ctext x='14' y='36' font-family='sans-serif' font-size='18' fill='%23263c45'%3ESTEAM ARCHIVE%3C/text%3E%3Ctext x='14' y='63' font-family='sans-serif' font-size='9' fill='%23263c45'%3ESmall lettering is part of the image%3C/text%3E%3C/svg%3E">
+          <p class="caption">Embedded lettering needs the whole image kept clear.</p>
+        </div>
+      </div>
+      <div class="small-labels"><span>i</span><span>7</span><span aria-hidden="true">Visible words remain protected even with aria-hidden="true".</span></div>
+      <p class="fine">Fine print: the archive closes at seventeen thirty. These small glyphs are real visible copy even when they are too short or narrow to become a game surface.</p>
+    </section>
+
+    <section>
+      <h2>Tightly wrapped reading columns</h2>
+      <p>These narrow columns have almost no vertical clearance between their text lines.</p>
+      <div class="dense-row">
+        <p class="wrapped">The keeper records every borrowed volume in a small brass-bound ledger. Readers return their books before the evening bell, leaving the long tables ready for the next morning. Closely wrapped lines deliberately occupy the apparent gaps above lower lines. Track and road markings must leave this paragraph clear, including its smallest punctuation and final short words. End.</p>
+        <p class="wrapped">Steam rises past the tall windows while the cataloguers compare pencilled notes. A narrow measure makes the text wrap repeatedly. Each visible line needs its own exclusion area, including short last lines and italic details. <em>Ink can extend slightly beyond a glyph's measured advance.</em> A. I. 1.</p>
+        <svg width="218" height="104" viewBox="0 0 218 104" role="img" aria-label="Inline SVG lettering">
+          <rect x="0" y="0" width="218" height="104" fill="#eadff7"/>
+          <text x="12" y="36" font-size="18">SVG catalogue</text>
+          <text x="12" y="66" font-size="9">Even very small SVG text stays clear.</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="motion-zone">
+      <h2>Moving original labels</h2>
+      <span class="moving-label">CSS label crossing an otherwise empty gap</span>
+      <div class="moving-ancestor"><span>This fine-print child moves with its animated ancestor.</span></div>
+      <span id="native-label">Late native animation, no DOM mutation</span>
+    </section>
+
+    <section class="js-motion-zone">
+      <h2>Scripted moving original surface</h2>
+      <button id="js-material" type="button">Script-moved original control</button>
+    </section>
+
+    <section class="dynamic-zone">
+      <h2>New copy can occupy an empty gap</h2>
+      <button id="add-copy" type="button">Insert or remove original text above this button</button>
+      <button id="animate-copy" type="button">Start another native label animation</button>
+      <p class="caption">The first button inserts visible text. The second starts a native animation without changing an attribute or the DOM tree.</p>
+    </section>
+
+    <section>
+      <h2>Native controls and editable copy</h2>
+      <p>Keep each complete native control and editable region clear.</p>
+      <div class="controls">
+        <label>Catalogue search <input placeholder="Small input lettering" value="Locomotive manuals"></label>
+        <label>Shelf <select><option>West gallery: fine print</option><option>East gallery</option></select></label>
+        <textarea rows="3" aria-label="Reader notes">A reader's note can wrap inside a native text area.</textarea>
+        <div contenteditable="true" aria-label="Editable archive note">Editable note: preserve the whole region, not just its current text.</div>
+      </div>
+      <p class="hidden-sample">This display-none sample should contribute no visible rectangle.</p>
+      <p style="visibility: hidden">This visibility-hidden sample should contribute no visible rectangle.</p>
+    </section>
+
+    <section class="sticky-zone">
+      <h2>Sticky original text and controls</h2>
+      <p>Keep scrolling through this tall native section. The panel sticks near the top, then moves away with the section; returning upward must not leave an old exclusion ghost.</p>
+      <div class="sticky-note">
+        <p>Sticky native copy follows the viewport only while this original section remains underneath it.</p>
+        <label>Sticky catalogue filter <input value="Brass binding" aria-label="Sticky catalogue filter"></label>
+        <p class="caption" aria-hidden="true">Small visible sticky lettering stays protected too.</p>
+      </div>
+      <p class="sticky-tail">This original line marks the lower part of the sticky section.</p>
+    </section>
+
+    <section class="nested-zone">
+      <h2>Scroll inside this original reading list</h2>
+      <p>Scroll this bordered region independently, then scroll the whole page until it is offscreen and return. Only the currently exposed text and controls need clearance; track markings elsewhere must stay in place.</p>
+      <div class="nested-scroll" tabindex="0" role="region" aria-label="Independently scrolling native reading list">
+        <article>
+          <h3>First visible shelf</h3>
+          <p>These words move with the inner scroll, not with the outer page. The list border clips text as it passes the top and bottom edges.</p>
+          <button type="button">Request first shelf</button>
+        </article>
+        <article>
+          <h3>Fine-print shelf</h3>
+          <p class="wrapped">A narrow original paragraph wraps into many short lines inside the scroller. Each tiny line remains legible as the list is moved, including this short ending. I. 7.</p>
+          <span aria-hidden="true">Visible inner-list text marked aria-hidden still matters.</span>
+        </article>
+        <article>
+          <h3>Control shelf</h3>
+          <label>Inner list search <input value="Pressure records" aria-label="Nested list search"></label>
+          <p>Keep the complete input box clear, including its padding.</p>
+        </article>
+        <article>
+          <h3>Last original shelf</h3>
+          <p>The bottom of this list should return to exactly the same track arrangement after scrolling away and back.</p>
+          <button type="button">Request last shelf</button>
+        </article>
+      </div>
+    </section>
+
+    <section class="return-zone">
+      <h2>Scroll-out and return space</h2>
+      <p>The nested reading list is above this long original section. Scroll far enough down to hide it completely, then return upward and check both its inner text and the fixed help control.</p>
+    </section>
+  </main>
+  <script>
+    const nativeLabel = document.querySelector('#native-label');
+    // A decorative animation with no protected text/media must not disable material.
+    const spinner = document.createElement('div');
+    spinner.style.cssText = 'position:fixed;right:20px;top:20px;width:24px;height:24px;border:4px dashed #a88743;pointer-events:none';
+    document.body.append(spinner);
+    spinner.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+      { duration: 2000, iterations: Infinity });
+    const scriptMover = document.querySelector('#js-material');
+    function moveScriptedSurface(now) {
+      scriptMover.style.transform = `translateX(${120 + Math.sin(now / 900) * 100}px)`;
+      requestAnimationFrame(moveScriptedSurface);
+    }
+    requestAnimationFrame(moveScriptedSurface);
+    function moveNativeLabel() {
+      nativeLabel.animate([
+        { transform: 'translate(0px, 0px)' },
+        { transform: 'translate(-340px, -76px)' },
+      ], { duration: 3500, iterations: 2, direction: 'alternate', easing: 'linear' });
+    }
+    setTimeout(moveNativeLabel, 3000);
+    document.querySelector('#animate-copy').addEventListener('click', moveNativeLabel);
+    document.querySelector('#add-copy').addEventListener('click', () => {
+      const existing = document.querySelector('#new-copy');
+      if (existing) { existing.remove(); return; }
+      const paragraph = document.createElement('p');
+      paragraph.id = 'new-copy';
+      paragraph.textContent = 'New original text now fills this formerly empty space. Decorations must disappear before this copy could be covered.';
+      document.querySelector('.dynamic-zone').append(paragraph);
+    });
+  </script>
+</body>
+</html>

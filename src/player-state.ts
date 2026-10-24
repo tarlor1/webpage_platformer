@@ -1,0 +1,129 @@
+import { coinId, encounterForUrl } from './encounters';
+import type { Equipment, PlayerState } from './progression-types';
+
+export interface PlayerTransition {
+  state: PlayerState;
+  duplicate: boolean;
+  reward: Equipment | null;
+}
+
+export function createPlayerState(): PlayerState {
+  return {
+    version: 1,
+    revision: 0,
+    coins: 0,
+    xp: 0,
+    level: 1,
+    inventory: [],
+    equippedItemId: null,
+    completedEncounters: [],
+    claimedRewards: [],
+    collectedCoins: [],
+  };
+}
+
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function uniqueStrings(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.every(item => typeof item === 'string' && item.length > 0)
+    && new Set(value).size === value.length;
+}
+
+function equipment(value: unknown): value is Equipment {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Partial<Equipment>;
+  return typeof item.id === 'string' && item.id.length > 0
+    && typeof item.name === 'string' && item.name.length > 0
+    && item.slot === 'boots' && item.rarity === 'rare'
+    && item.jumpMultiplier === 1.2
+    && typeof item.description === 'string';
+}
+
+/** Reject incompatible/corrupt saves rather than silently replacing earned progress. */
+export function readPlayerState(value: unknown): PlayerState {
+  if (value === undefined) return createPlayerState();
+  if (typeof value !== 'object' || value === null) throw new Error('Saved player state is invalid. Progress was not changed.');
+  const state = value as Partial<PlayerState>;
+  if (state.version !== 1) throw new Error('Saved player state has an unsupported version. Progress was not changed.');
+  if (!nonnegativeInteger(state.revision)
+    || !nonnegativeInteger(state.coins)
+    || !nonnegativeInteger(state.xp)
+    || state.level !== 1 + Math.floor(state.xp / 100)
+    || !Array.isArray(state.inventory)
+    || !state.inventory.every(equipment)
+    || !uniqueStrings(state.completedEncounters)
+    || !uniqueStrings(state.claimedRewards)
+    || !uniqueStrings(state.collectedCoins)) {
+    throw new Error('Saved player state is invalid. Progress was not changed.');
+  }
+  const owned = new Set<string>();
+  for (const item of state.inventory) {
+    if (owned.has(item.id)) throw new Error('Saved inventory has duplicate equipment. Progress was not changed.');
+    owned.add(item.id);
+  }
+  if (state.equippedItemId !== null && (typeof state.equippedItemId !== 'string' || !owned.has(state.equippedItemId))) {
+    throw new Error('Saved equipped item is not owned. Progress was not changed.');
+  }
+  return state as PlayerState;
+}
+
+function increment(value: number, amount: number): number {
+  const next = value + amount;
+  if (!Number.isSafeInteger(next)) throw new Error('Player progression exceeds the supported integer range.');
+  return next;
+}
+
+/** Resolve rewards from the URL, never from equipment or amounts supplied by a caller. */
+export function collectCoin(state: PlayerState, url: string, index: number): PlayerTransition {
+  const encounter = encounterForUrl(url);
+  if (!Number.isInteger(index) || index < 0 || index >= encounter.coinCount) {
+    throw new Error('Coin index is outside this page encounter.');
+  }
+  const id = coinId(encounter, index);
+  if (state.collectedCoins.includes(id)) return { state, duplicate: true, reward: null };
+
+  const collectedCoins = [...state.collectedCoins, id];
+  let complete = true;
+  for (let coin = 0; coin < encounter.coinCount; coin++) {
+    if (!collectedCoins.includes(coinId(encounter, coin))) {
+      complete = false;
+      break;
+    }
+  }
+  const claim = complete && !state.claimedRewards.includes(encounter.id);
+  const reward = claim && encounter.equipment && !state.inventory.some(item => item.id === encounter.equipment!.id)
+    ? encounter.equipment
+    : null;
+  const xp = increment(state.xp, encounter.xpPerCoin);
+  return {
+    duplicate: false,
+    reward,
+    state: {
+      ...state,
+      revision: increment(state.revision, 1),
+      coins: increment(state.coins, encounter.coinValue),
+      xp,
+      level: 1 + Math.floor(xp / 100),
+      collectedCoins,
+      completedEncounters: complete && !state.completedEncounters.includes(encounter.id)
+        ? [...state.completedEncounters, encounter.id] : state.completedEncounters,
+      claimedRewards: claim ? [...state.claimedRewards, encounter.id] : state.claimedRewards,
+      inventory: reward ? [...state.inventory, reward] : state.inventory,
+    },
+  };
+}
+
+export function equipItem(state: PlayerState, itemId: string | null): PlayerTransition {
+  if (itemId !== null && !state.inventory.some(item => item.id === itemId)) {
+    throw new Error('Cannot equip equipment that is not owned.');
+  }
+  if (state.equippedItemId === itemId) return { state, duplicate: true, reward: null };
+  return {
+    state: { ...state, revision: increment(state.revision, 1), equippedItemId: itemId },
+    duplicate: false,
+    reward: null,
+  };
+}

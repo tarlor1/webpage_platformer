@@ -18,6 +18,8 @@ interface Source {
   platforms: Map<number, Platform>;
   animated: boolean;
   pending: number;
+  documentScroll: boolean;
+  scrollers: Element[];
 }
 interface Measurement {
   styles: Map<Element, CSSStyleDeclaration>;
@@ -125,6 +127,14 @@ export class PageGeometry {
     this.selectPlatforms();
   }
 
+  /** Only fixed/sticky terrain or descendants of a nested scroller move on scroll. */
+  markScrolled(target: EventTarget | null): void {
+    const documentScroll = !target || target === document || target === window || target === document.scrollingElement;
+    for (const source of this.sources) {
+      if (documentScroll ? source.documentScroll : target instanceof Element && source.scrollers.includes(target)) source.pending = 3;
+    }
+  }
+
   /** Keep the last standing source measurable even far from both player and viewport. */
   retainPlatform(id: string): void {
     if (this.retained?.id === id) return;
@@ -205,7 +215,7 @@ export class PageGeometry {
         || element.getAttribute('value') || element.textContent || element.tagName).trim().slice(0, 70);
     }
     if (!this.ids.has(node)) this.ids.set(node, this.nextId++);
-    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0 };
+    return { node, element, range, text, label, platforms: new Map(), animated: false, pending: 0, documentScroll: false, scrollers: [] };
   }
 
   private measureSource(source: Source, measurement: Measurement, rebuilding: boolean): void {
@@ -213,12 +223,16 @@ export class PageGeometry {
     const visible = new Map<number, Platform>();
     let clipped: Area | undefined;
     let hidden = !source.node.isConnected;
+    source.documentScroll = false;
+    source.scrollers.length = 0;
     for (let element: Element | null = source.element; element && !hidden; element = element.parentElement) {
       hidden = this.hidden(element, measurement);
-      if ((element === source.element && !source.text) || element === document.body || element === document.documentElement) continue;
       const style = this.styleFor(element, measurement);
       const clipX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX);
       const clipY = /^(hidden|clip|scroll|auto)$/.test(style.overflowY);
+      if (style.position === 'fixed' || style.position === 'sticky') source.documentScroll = true;
+      if (element !== document.scrollingElement && (clipX || clipY)) source.scrollers.push(element);
+      if ((element === source.element && !source.text) || element === document.body || element === document.documentElement) continue;
       if (clipX || clipY) {
         const rect = element.getBoundingClientRect();
         clipped ??= { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity };

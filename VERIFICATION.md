@@ -1,5 +1,107 @@
 # Verification record
 
+## Version 1.1.0: persistent exploration progression
+
+Current source checks: `bun run typecheck`, **76 tests across seven files**, and `bun run build` passed. Output includes the approximately 51.2 kB content bundle, 5.0 kB MV3 service worker, and 1.2 kB popup. All verification below used the actual unpacked extension and Chrome local storage in owned disposable profiles. No save was prefilled with equipment.
+
+### Physical collection, equipment, and jump reach
+
+On `http://127.0.0.1:8080/fixtures/progression.html?workshop=23`, a fresh player physically collected all three coins using game movement. The saved result was 15 coins, 60 XP, one completed/claimed encounter, and one rare Skybound Boots item. This URL was selected by calling the actual seeded generator, not by a special-case or debug grant. Inventory Equip/Unequip used the production worker and saved state.
+
+The character stood at the same horizontal position under the fixture's upper original button for both jumps:
+
+| Equipment | Landing surface top in document CSS pixels |
+| --- | --- |
+| None | Lower original button, y = 500 |
+| Skybound Boots equipped | Upper original button, y = 340 |
+
+The equipped jump reached the 160-pixel rise that the base jump could not. HUD samples also observed lower apex coordinates with boots, but those 100 ms samples are not claimed as an exact continuous peak-height measurement. Equipped footwear changed color.
+
+A keyboard check initially exposed focus loss when pending equipment buttons were natively disabled. That was fixed by preserving focus with `aria-disabled` and rejecting pending actions in the handler. The final browser check equipped, unequipped, and re-equipped with Space; focus remained on the inventory button, and gameplay remained paused rather than interpreting Space as a jump.
+
+### Actual two-tab claim races
+
+Two tabs visited the same ordinary encounter, one with an added `utm_source` parameter. For each coin, each tab sent six simultaneous production claim messages from its extension content context: 12 requests per coin. Before these checks the rare workshop encounter had already earned 15 coins and 60 XP.
+
+| Coin index | New claims | Duplicate replies | Saved coins | Saved XP | Level |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 1 | 11 | 20 | 80 | 1 |
+| 1 | 1 | 11 | 25 | 100 | 2 |
+| 2 | 1 | 11 | 30 | 120 | 2 |
+
+The ordinary encounter completed once, inventory remained one item, and the equipped rare item was unchanged. These were real worker/storage transactions, not mocked storage calls; the physical collision/collection path was exercised separately on the rare workshop page.
+
+### Navigation, restart, independent players, and live Google
+
+Chromium was fully closed and reopened with the same disposable profile. Starting on `fixtures/layout.html?workshop=23&utm_campaign=restart` restored 30 coins, 120 XP, level 2, the owned/equipped Skybound Boots, both completed encounters, both claimed rewards, and all six collected-coin IDs. The different pathname and tracking parameter deliberately shared the earlier rare encounter: page progress remained 3/3 and no extra reward was granted. The restored inventory screenshot was visually inspected.
+
+On the live Google homepage, the same profile retained its equipped boots and physically collected the first coin of Google's encounter. The HUD showed 35 coins, 140 XP, level 2, current-page progress 1/3, inventory one, and no visible progression errors.
+
+A second, fresh Chrome profile then visited the same rare workshop URL. It started with its own empty inventory and physically earned its own Skybound Boots after collecting three coins. Its resulting 15 coins, 60 XP, level 1, and unequipped item were independent of the first profile; the deterministic equipment ID/name matched.
+
+Silver rails over brown wooden sleepers were also observed before progression integration: the actual Google overlay contained 1,608 silver-highlight pixels and 1,047 brown-sleeper pixels. Gold background panels remain removed.
+
+### Scope and remaining limits
+
+These checks cover the new progression surface and preserve earlier platforming evidence below. They do not repeat the entire historical viewport/zoom/search-results or other-site matrix. McDonald's remains unverified in this environment because its normal page returned Access Denied/HTTP 403. Activation and per-page coordinates are not saved; inventory, equipped item, coins, XP/level, and completion/claim history are. Empty or rapidly changing native layouts can need manual Respawn to replan pickups. There is no combat, shop, backend, account sync, or server anti-cheat.
+
+## Version 1.0.2: thin tracks and roads
+
+Removed the gold background drawing code. Version-3 URL seeds choose procedural railway tracks or dashed roads, limited to 10 CSS pixels high above native edges. Existing text/media clipping, stable anchors, and original collision geometry remain in use.
+
+`bun run typecheck`, all **50 tests**, and `bun run build` passed (38.2 kB content bundle). The actual unpacked extension was exercised on the local decoration fixture and live Google homepage at widths 1440 and 1024, including a 6× CPU-throttled resize. Screenshots of both were visually inspected: thin rails/roads were visible and the gold panels were absent. An independent fixture Canvas/DOM Range probe checked 96 rectangles and found **zero decoration pixels over checked text/media**, excluding the playable character.
+
+McDonald's was not revalidated for this appearance-only change; the prior access-denied limitation remains. Earlier background-specific pixel hashes and counts below are historical, not acceptance criteria for tracks.
+
+## Version 1.0.1: missing-material fixes
+
+Removed the 40 ms text-inspection cutoff: a slow but count-bounded scan no longer permanently disables material. Native animations without any protected source descendants are now ignored by clearance discovery; a rotating decorative element cannot disable the entire material layer. The HUD shows the installed version and material inspection status even with Debug off.
+
+`bun run typecheck`, all **50 tests**, and `bun run build` passed (40.4 kB content bundle). The actual unpacked 1.0.1 extension rendered material on the decoration fixture with an infinitely rotating decorative div: 200,234 painted canvas pixels at width 1440, and 177,866 after resizing to width 1024 under 6× CPU throttling. These totals include the small playable character; their size establishes that the material layer was present, not merely the character. The fixture screenshot was visually inspected.
+
+The live Google homepage reported eight eligible material surfaces with 97,201 painted canvas pixels, and 93,423 after the same throttled resize. Both checks displayed version 1.0.1. McDonald's root URL returned Access Denied in Chromium, and the static reader also received HTTP 403; its normal page could not be verified in this session. These checks establish visibility, not a new exhaustive text-overlap matrix.
+
+## Previous change: gold platform material and scroll stability
+
+The current material build passes `bun run typecheck`, **50 tests across four files**, and `bun run build` (approximately 40 kB of bundled content code). It replaces the tiny-prop implementation below with generation-version-2 procedural brass material. No assets were downloaded or added, and no collision surfaces were added.
+
+An additional Google keyboard/typing/Escape interaction scenario exceeded the browser-run deadline of 30 seconds. It is not counted as a passing interaction check for this change; the graphics verification below completed independently.
+
+The actual unpacked extension was exercised in a disposable Chromium profile on `fixtures/decorations.html` at 1440, 1024, and 768 pixels wide, with a 1000-pixel viewport height. After each resize settled, a 40×24-pixel patch above the original image was sampled for 18 consecutive frames at each of six document scroll offsets: 0, 20, 80, 160, 240, and 300 CSS pixels. **All 960 patch pixels remained painted in every sample**, with one unchanged pixel hash per width:
+
+| Viewport width | Patch hash across all 108 samples | Hash after scrolling away and back |
+| --- | --- | --- |
+| 1440 | 4198447683 | 4198447683 |
+| 1024 | 2629226269 | 2629226269 |
+| 768 | 860737783 | 860737783 |
+
+Partial viewport clipping was checked separately: 480 pixels remained painted in a visible 40×12 strip when most of the material was above the viewport. It was not hidden as a whole.
+
+An independent Canvas/DOM Range probe, with Debug off and the playable character excluded, found **zero material pixels over checked native text, controls, images, and SVGs**. Coverage included the three viewport widths, fixed and sticky page content, five nested-scroller positions, scrolling the nested region completely away and returning, newly inserted text before/after refresh, and a late native text animation. A continuously JavaScript-transformed original button moved about 83 pixels during 60 sampled frames; its tracked material patch retained all 960 pixels in every frame, with zero checked text coverage.
+
+The running extension also reproduced the original material patch after returning to the same URL seed with a tracking parameter added. A different meaningful query changed the patch. Unit regressions cover stable edge choices as nearby candidates change, input-order independence, partially offscreen geometry, moving/resizing surfaces, missing sources, and normalized URL identity. Motion-mask refresh now finishes within its source/rectangle count bounds; an elapsed-time threshold no longer blanks an otherwise complete mask.
+
+The live Google homepage was visually inspected with the larger gold material, and its independent text/media probe reported zero covered pixels. The McDonald's homepage returned **Access Denied** with zero images in this session, so the normal page could not be revalidated; the older image checks below remain historical evidence only. This cosmetic change did not rerun the earlier search-results/zoom or other-site matrix.
+
+Real content/layout changes and resizing can briefly suppress material while protection is rebuilt. Unsupported animation bounds, opaque/embedded content, and inspection limits remain conservative omissions. The following sections retain previous implementation evidence and do not describe the current material appearance.
+
+## Previous tiny-prop scenery (superseded)
+
+The decoration build uses Bun 1.4.4 and passes `bun run typecheck`, **50 tests across four files**, and `bun run build` (`dist/content.js` approximately 37.3 kB). Type checking now includes the test files with Bun development types. The previous platforming record below is retained as earlier evidence; its bundle sizes and test totals are not the current decoration totals.
+
+The actual unpacked extension was activated in a disposable Chromium 155 profile and visually inspected on `fixtures/decorations.html` and the real Google homepage. No user profile or sign-in was used.
+
+- The fixture displayed five small ornaments; the Google homepage displayed four.
+- With Debug off, an independent DOM/Range probe compared canvas pixels against native text rectangles and whole controls/images/SVGs. It excluded the playable character, which is intentionally allowed to move over the page. The initial fixture had **1,604 ornament pixels** and **zero pixels over protected text/media** across 36 checked rectangles; Google had **1,261 ornament pixels** and zero covered pixels.
+- On the same fixture layout, `q=brass` produced ornament pixel hash `439521069`; `q=copper` changed it to `798796906`. Returning to `q=brass` with `utm_source=check` restored `439521069`, with zero covered pixels in each case. This exercised the running extension's URL-change path, not only the seed helper.
+- Inserting new original text at an ornament's former position immediately hid the decoration layer for the next frame. After the bounded refresh, ornaments reappeared in safe slots with zero covered text pixels.
+- Scrolling to the moving-copy section and testing widths 1440, 1024, and 768 produced zero covered text/media pixels across six samples per width. Visible ornament pixels remained present at each width. A late native text animation and the fixture's native text-insertion button also preserved zero overlap.
+- Unit regressions cover normalized URL identity, meaningful parameter/fragment changes, deterministic artwork, blocked and incomplete scans, viewport/HUD exclusion, moving anchors, and hiding rather than relocating unsafe ornaments. Existing physics and recovery tests continue to pass.
+
+Text clearance is conservative and bounded. It suppresses scenery when it cannot safely complete inspection or bound an animation. Opaque components and image/SVG lettering are protected by whole element bounds; this is not an OCR or exhaustive arbitrary-paint analysis. No new collision surfaces were introduced. Screenshots of the clean fixture and Google result were inspected.
+
+Final packaging check: `bun install --frozen-lockfile` completed without changes. Clicking the actual Google HUD's Stop control removed the overlay (zero overlay hosts remaining); the verification browser and local fixture server were then closed.
+
 ## Scope and environment
 
 This record covers the original-DOM-terrain build: generated bridges and artificial floors have been removed. Scrolling or resizing alone does not request a respawn or a move to visible terrain; exact coordinate observations and a live-layout qualification are recorded below. Automatic recovery applies only after falling below the actual document bottom and returns to the last standing original platform at its current position, including when that platform is offscreen. If that platform is unavailable, the fall stops with an explicit status; manual Respawn or a restart is required.
@@ -120,4 +222,4 @@ Only Linux Chromium 155 was exercised. Chrome on other operating systems, older 
 
 Terrain follows axis-aligned DOM bounds and text-line rectangles. Rotation, arbitrary clipping, and visual occlusion are not comprehensively modeled; there is no claim that every covered or visually hidden surface is rejected. Animated GIF or video pixels do not create independently moving terrain when their DOM element's bounds stay fixed. Iframe and shadow-root contents are outside the terrain scan. The live-site results are spot checks, not guarantees for every page, SPA state, animation mechanism, or document size.
 
-No progression or position persistence, inventory, reward claiming, combat, equipment, multiplayer, or deterministic encounters were verified; those features remain outside this platforming change.
+The historical platforming-only checks above did not verify progression, inventory, or rewards. Those features are now implemented and verified in the version 1.1.0 section at the top; per-page coordinate persistence, combat, and multiplayer remain absent.

@@ -1,0 +1,239 @@
+import { coinId } from './encounters';
+import type { Equipment, PageEncounter, PlayerState } from './progression-types';
+
+interface EquipmentRow {
+  element: HTMLLIElement;
+  name: HTMLElement;
+  description: HTMLElement;
+  effect: HTMLElement;
+  marker: HTMLElement;
+  button: HTMLButtonElement;
+}
+
+export interface ProgressionPanel {
+  update(state: PlayerState | null, encounter: PageEncounter, error?: string): void;
+  dispose(): void;
+}
+
+export function mountProgressionUI(
+  section: HTMLElement,
+  actions: { equip: (itemId: string | null) => Promise<void> },
+): ProgressionPanel {
+  const document = section.ownerDocument;
+  const root = document.createElement('div');
+  root.className = 'progression-panel';
+  const style = document.createElement('style');
+  style.textContent = `
+    .progression-panel{margin:9px 0;padding-top:8px;border-top:1px solid #ad874e88;font:13px/1.45 system-ui,sans-serif;color:#f1e5ce}
+    .progression-panel .progression-stats{display:flex;justify-content:space-between;gap:8px;color:#f5cb7d;font-weight:600}
+    .progression-panel .progression-xp-label{display:flex;justify-content:space-between;gap:8px;margin-top:3px;font-size:12px}
+    .progression-panel progress{display:block;width:100%;height:7px;margin:3px 0 6px;accent-color:#d5a653;border:0;border-radius:4px;overflow:hidden;background:#101b22}
+    .progression-panel progress::-webkit-progress-bar{background:#101b22}
+    .progression-panel progress::-webkit-progress-value{background:#d5a653}
+    .progression-panel .progression-page{font-size:12px;color:#d6dfdc}
+    .progression-panel details{margin-top:7px;border:1px solid #ad874e66;border-radius:4px;background:#15212b}
+    .progression-panel summary{padding:6px 8px;cursor:pointer;color:#f5cb7d;font-weight:600}
+    .progression-panel summary:focus-visible{outline:2px solid #62d8cd;outline-offset:2px;border-radius:3px}
+    .progression-panel .progression-inventory{max-height:220px;overflow:auto;overscroll-behavior:contain;padding:0 8px 8px;scrollbar-color:#ad874e #15212b}
+    .progression-panel .progression-empty{margin:2px 0;color:#c8d2d3;font-size:12px}
+    .progression-panel ul{list-style:none;padding:0;margin:0}
+    .progression-panel li{padding:8px 0;border-top:1px solid #59697166}
+    .progression-panel .progression-item-heading{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+    .progression-panel .progression-boot{display:inline-block;width:16px;height:16px;border-left:7px solid #ad874e;border-bottom:6px solid #ad874e;border-radius:2px}
+    .progression-panel .progression-item-name{font-weight:600;color:#f1e5ce}
+    .progression-panel .progression-rare{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#b9b3ff;border:1px solid #9286cd;border-radius:3px;padding:0 4px}
+    .progression-panel .progression-equipped{font-size:11px;color:#7fe4d7}
+    .progression-panel .progression-description{font-size:12px;color:#c8d2d3;margin:3px 0}
+    .progression-panel .progression-effect{font-size:12px;color:#f5cb7d;margin:3px 0 6px}
+    .progression-panel button{background:#344953;color:#fff1d8;border:1px solid #ad874e;border-radius:4px;padding:5px 9px;font:inherit;cursor:pointer}
+    .progression-panel button:focus-visible{outline:2px solid #62d8cd}
+    .progression-panel button:disabled,.progression-panel button[aria-disabled="true"]{cursor:wait;opacity:.55}
+    .progression-panel .progression-message{font-size:12px;margin:5px 0 0;color:#c8d2d3}
+    .progression-panel .progression-error{color:#ffbeb1;overflow-wrap:anywhere}
+    .progression-panel [hidden]{display:none!important}
+  `;
+
+  const stats = document.createElement('div');
+  stats.className = 'progression-stats';
+  const level = document.createElement('span');
+  const coins = document.createElement('span');
+  stats.append(level, coins);
+  const xpLabel = document.createElement('div');
+  xpLabel.className = 'progression-xp-label';
+  const xpText = document.createElement('span');
+  const xpNext = document.createElement('span');
+  xpLabel.append(xpText, xpNext);
+  const xpBar = document.createElement('progress');
+  xpBar.max = 100;
+  xpBar.value = 0;
+  xpBar.setAttribute('aria-label', 'Experience toward next level');
+  const page = document.createElement('div');
+  page.className = 'progression-page';
+
+  const inventory = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'Inventory';
+  const inventoryBody = document.createElement('div');
+  inventoryBody.className = 'progression-inventory';
+  const empty = document.createElement('p');
+  empty.className = 'progression-empty';
+  const list = document.createElement('ul');
+  list.setAttribute('aria-label', 'Owned equipment');
+  inventoryBody.append(empty, list);
+  inventory.append(summary, inventoryBody);
+
+  const status = document.createElement('p');
+  status.className = 'progression-message';
+  status.setAttribute('role', 'status');
+  const errorMessage = document.createElement('p');
+  errorMessage.className = 'progression-message progression-error';
+  errorMessage.setAttribute('role', 'alert');
+  errorMessage.hidden = true;
+  root.append(style, stats, xpLabel, xpBar, page, inventory, status, errorMessage);
+  section.append(root);
+
+  const listeners = new AbortController();
+  const rows = new Map<string, EquipmentRow>();
+  let currentState: PlayerState | null = null;
+  let currentEncounter: PageEncounter | null = null;
+  let externalError = '';
+  let equipError = '';
+  let pending = false;
+  let pendingItemId: string | null = null;
+  let disposed = false;
+
+  function setText(element: HTMLElement, text: string): void {
+    if (element.textContent !== text) element.textContent = text;
+  }
+
+  function createRow(item: Equipment): EquipmentRow {
+    const element = document.createElement('li');
+    const heading = document.createElement('div');
+    heading.className = 'progression-item-heading';
+    const icon = document.createElement('span');
+    icon.className = 'progression-boot';
+    icon.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'progression-item-name';
+    const rarity = document.createElement('span');
+    rarity.className = 'progression-rare';
+    rarity.textContent = 'Rare';
+    const marker = document.createElement('span');
+    marker.className = 'progression-equipped';
+    marker.textContent = 'Equipped';
+    heading.append(icon, name, rarity, marker);
+    const description = document.createElement('p');
+    description.className = 'progression-description';
+    const effect = document.createElement('p');
+    effect.className = 'progression-effect';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.equipmentId = item.id;
+    element.append(heading, description, effect, button);
+    list.append(element);
+    return { element, name, description, effect, marker, button };
+  }
+
+  function render(): void {
+    if (disposed) return;
+    const state = currentState;
+    setText(level, state ? `Level ${state.level}` : 'Level —');
+    setText(coins, state ? `${state.coins} coins` : 'Coins —');
+    const progress = state ? state.xp % 100 : 0;
+    setText(xpText, state ? `${state.xp} XP total` : 'XP —');
+    setText(xpNext, state ? `${progress}/100 to next level` : 'Loading…');
+    xpBar.value = progress;
+    xpBar.setAttribute('aria-valuetext', state ? `${progress} of 100 XP toward next level` : 'Loading experience');
+    const encounter = currentEncounter;
+    const collected = state && encounter
+      ? Array.from({ length: encounter.coinCount }, (_, index) => coinId(encounter, index))
+        .filter(id => state.collectedCoins.includes(id)).length
+      : 0;
+    setText(page, state && encounter
+      ? `Page exploration: ${collected}/${encounter.coinCount} coins collected`
+      : `Page exploration: —/${encounter?.coinCount ?? 3} coins collected`);
+    setText(summary, state ? `Inventory (${state.inventory.length})` : 'Inventory');
+    setText(empty, state
+      ? 'No equipment yet. Rare jump boots are found in about 1 in 10 completed page explorations.'
+      : 'Loading saved inventory…');
+    empty.hidden = !!state?.inventory.length;
+
+    const ownedIds = new Set(state?.inventory.map(item => item.id) ?? []);
+    for (const [id, row] of rows) {
+      if (!ownedIds.has(id)) {
+        row.element.remove();
+        rows.delete(id);
+      }
+    }
+    for (const item of state?.inventory ?? []) {
+      let row = rows.get(item.id);
+      if (!row) {
+        row = createRow(item);
+        rows.set(item.id, row);
+      }
+      const equipped = state?.equippedItemId === item.id;
+      setText(row.name, item.name);
+      setText(row.description, item.description);
+      const heightBonus = Math.round((item.jumpMultiplier ** 2 - 1) * 100);
+      setText(row.effect, `Jump power ×${item.jumpMultiplier} · ${heightBonus}% higher jumps`);
+      row.marker.hidden = !equipped;
+      setText(row.button, pending && (pendingItemId === item.id || (pendingItemId === null && equipped))
+        ? 'Saving…' : equipped ? 'Unequip' : 'Equip');
+      row.button.setAttribute('aria-label', `${equipped ? 'Unequip' : 'Equip'} ${item.name}`);
+      // Keep keyboard focus during saves; the delegated handler rejects pending actions.
+      row.button.disabled = !state;
+      row.button.setAttribute('aria-disabled', String(pending || !state));
+    }
+    const error = [externalError, equipError].filter(Boolean).join(' ');
+    setText(errorMessage, error);
+    errorMessage.hidden = !error;
+    setText(status, pending ? 'Saving equipment…' : !state ? 'Loading saved progress…' : '');
+    status.hidden = !pending && !!state;
+    inventoryBody.setAttribute('aria-busy', String(pending || !state));
+  }
+
+  root.addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLButtonElement>('button[data-equipment-id]');
+    if (!button || !root.contains(button) || pending || !currentState) return;
+    const id = button.dataset.equipmentId;
+    if (!id || !currentState.inventory.some(item => item.id === id)) return;
+    const itemId = currentState.equippedItemId === id ? null : id;
+    pending = true;
+    pendingItemId = itemId;
+    equipError = '';
+    render();
+    void (async () => {
+      try {
+        await actions.equip(itemId);
+      } catch (error: unknown) {
+        if (!disposed) equipError = `Could not save equipment: ${error instanceof Error ? error.message : String(error)}`;
+      } finally {
+        if (!disposed) {
+          pending = false;
+          pendingItemId = null;
+          render();
+        }
+      }
+    })();
+  }, { signal: listeners.signal });
+
+  render();
+  return {
+    update(state, encounter, error) {
+      if (disposed) return;
+      currentState = state;
+      currentEncounter = encounter;
+      externalError = error ?? '';
+      render();
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      listeners.abort();
+      rows.clear();
+      root.remove();
+    },
+  };
+}

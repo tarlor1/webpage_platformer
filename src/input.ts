@@ -9,7 +9,7 @@ export class Input {
     const signal = this.abort.signal;
     window.addEventListener('keydown', e => {
       // Escape is reserved only while the game surface owns keyboard focus.
-      if (document.activeElement !== surface) return;
+      if (!this.focused) return;
       if (e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); stop(); return; }
       if (!codes[e.code]) return;
       e.preventDefault(); e.stopImmediatePropagation();
@@ -26,7 +26,10 @@ export class Input {
     window.addEventListener('blur', () => this.clear(), { signal });
     document.addEventListener('focusin', () => { if (document.activeElement !== surface) this.clear(); }, { signal });
   }
-  get focused(): boolean { return document.activeElement === this.surface && !document.hidden && document.hasFocus(); }
+  get focused(): boolean {
+    return document.activeElement === this.surface && !document.hidden && document.hasFocus()
+      && this.surface.shadowRoot?.activeElement?.classList.contains('surface') === true;
+  }
   clear(): void { this.left = this.right = this.jump = this.drop = false; }
   dispose(): void { this.abort.abort(); this.clear(); }
 }
