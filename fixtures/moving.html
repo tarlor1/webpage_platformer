@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moving webpage surfaces</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #18343f; background: #edf3f2; font: 16px/1.5 system-ui, sans-serif; }
+  header, main, footer { max-width: 1100px; margin: auto; padding: 20px 28px; }
+  h1 { font-size: 26px; line-height: 1.25; }
+  h1, h2 { margin: 0 0 10px; }
+  h2 { font-size: 20px; }
+  p { margin: 8px 0; }
+  header > p, .experiment > p, .experiment > h2 { max-width: 340px; }
+  button, select { padding: 8px 10px; font: inherit; border: 2px solid #426675; border-radius: 5px; background: white; color: inherit; }
+  button { cursor: pointer; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 340px; }
+  .controls label { width: 100%; }
+  .controls select { width: 100%; }
+  #status { display: block; width: 100%; }
+  .experiments { position: relative; min-height: 540px; }
+  .experiment { padding: 0 0 16px; }
+  .track { position: absolute; inset: 0; pointer-events: none; }
+  .surface { position: absolute; top: var(--surface-top, 130px); left: calc(50% - 87.5px); pointer-events: auto; }
+  .photo { display: block; width: 175px; height: 90px; border: 3px solid #375c69; border-radius: 8px; }
+  .horizontal { animation: horizontal-path 6s linear infinite; }
+  @keyframes horizontal-path { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(150px); } 75% { transform: translateX(-150px); } }
+  .vertical { animation: vertical-path 5s linear infinite; }
+  @keyframes vertical-path { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-100px); } 75% { transform: translateY(100px); } }
+  .moving-control { width: 175px; animation: diagonal-path 7s linear infinite; }
+  @keyframes diagonal-path { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(110px, -75px); } 75% { transform: translate(-100px, 75px); } }
+  .text-ancestor { width: 240px; left: calc(50% - 120px); animation: diagonal-path 8s linear infinite; }
+  .text-ancestor a { color: #174f82; text-decoration-thickness: 2px; }
+  .tile { width: 175px; padding: 14px; background: #f9e6a9; border: 3px solid #9b7942; border-radius: 6px; }
+  #transition { transform: translate(0, 0); transition: transform 2s linear; }
+  #transition.far { transform: translate(120px, -100px); }
+  #transition.resetting { transition: none; }
+  #waapi { background: #d5e8dd; border-color: #4f7a60; }
+  #javascript { background: #e1ddf2; border-color: #776596; }
+  .motion-paused .horizontal, .motion-paused .vertical, .motion-paused .moving-control, .motion-paused .text-ancestor { animation-play-state: paused; }
+  .scroll-course { min-height: 1800px; padding-top: 65px; }
+  .landing { width: min(65%, 560px); margin: 90px 0 180px; padding: 22px; border: 2px solid #7a959c; background: white; }
+  .landing:nth-of-type(even) { margin-left: auto; }
+  footer { border-top: 3px solid #527c86; }
+  @media (max-width: 680px) { header, main, footer { padding-inline: 18px; } .experiments { min-height: 600px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Moving webpage surfaces</h1>
+  <p>Select a real page surface, reset its motion, then start or respawn the game. The selected surface begins centered near viewport y450.</p>
+  <div class="controls" aria-label="Page motion controls">
+    <label for="scene">Surface to inspect</label>
+    <select id="scene">
+      <option value="horizontal">Horizontal CSS image</option>
+      <option value="vertical">Vertical CSS image</option>
+      <option value="ancestor">Animated ancestor with wrapped text</option>
+      <option value="transition">Native CSS transition</option>
+      <option value="waapi">Web Animations API article</option>
+      <option value="javascript">JavaScript style animation</option>
+      <option value="control">CSS animated native button</option>
+    </select>
+    <button id="pause" type="button">Pause</button>
+    <button id="run" type="button">Run</button>
+    <button id="reset" type="button">Reset</button>
+    <output id="status" aria-live="polite">Motion running</output>
+  </div>
+</header>
+<main>
+  <div class="experiments">
+    <section class="experiment" data-scene="horizontal">
+      <h2>Horizontal CSS image</h2><p>A real image follows a constant-speed horizontal transform.</p>
+      <div class="track"><img class="surface photo horizontal" id="horizontal" width="175" height="90" alt="Mountain lake illustration" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='175' height='90' viewBox='0 0 175 90'%3E%3Crect width='175' height='90' fill='%23b8deea'/%3E%3Ccircle cx='140' cy='20' r='12' fill='%23f7cc67'/%3E%3Cpath d='M0 65L45 10L85 60L120 25L175 70V90H0Z' fill='%235c7f78'/%3E%3Cpath d='M30 28L45 10L59 28Z' fill='white'/%3E%3Cpath d='M0 70Q85 56 175 72V90H0Z' fill='%234686ac'/%3E%3C/svg%3E"></div>
+    </section>
+    <section class="experiment" data-scene="vertical" hidden>
+      <h2>Vertical CSS image</h2><p>A second image rises and descends. Land, jump, and drop while it rises.</p>
+      <div class="track"><img class="surface photo vertical" id="vertical" width="175" height="90" alt="Mountain lake illustration" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='175' height='90'%3E%3Crect width='175' height='90' fill='%23c8e6ec'/%3E%3Cpath d='M0 75L65 10L110 65L140 35L175 75V90H0Z' fill='%23688767'/%3E%3Cpath d='M0 75Q85 60 175 77V90H0Z' fill='%234686ac'/%3E%3C/svg%3E"></div>
+    </section>
+    <section class="experiment" data-scene="ancestor" hidden>
+      <h2>Transform on a text ancestor</h2><p>The wrapper owns the transform. The inline link wraps and has no animation itself.</p>
+      <div class="track"><div class="surface text-ancestor" id="ancestor"><a href="#lower">This deliberately long inline link wraps across several lines while its ancestor moves in both directions.</a></div></div>
+    </section>
+    <section class="experiment" data-scene="transition" hidden>
+      <h2>Native CSS transition</h2><p>A class switches every 2.2 seconds; the browser interpolates a two-second transform transition.</p>
+      <div class="track"><div class="surface tile" id="transition">Transitioning webpage card</div></div>
+    </section>
+    <section class="experiment" data-scene="waapi" hidden>
+      <h2>Web Animations API</h2><p>A page-owned Animation moves an ordinary article without per-frame style writes.</p>
+      <div class="track"><article class="surface tile" id="waapi">WAAPI article</article></div>
+    </section>
+    <section class="experiment" data-scene="javascript" hidden>
+      <h2>JavaScript style updates</h2><p>requestAnimationFrame writes the transform. This card has no CSS or WAAPI animation.</p>
+      <div class="track"><div class="surface tile" id="javascript">JavaScript motion</div></div>
+    </section>
+    <section class="experiment" data-scene="control" hidden>
+      <h2>CSS animated native control</h2><p>A real clickable button follows a diagonal transform.</p>
+      <div class="track"><button class="surface moving-control" id="moving-button" type="button">Click count: 0</button></div>
+    </section>
+  </div>
+  <section class="scroll-course" id="lower" aria-label="Plain webpage scrolling surfaces">
+    <h2>Plain DOM scrolling surfaces</h2>
+    <p>Scroll away and back. Geometry updates should preserve the character rather than reposition it.</p>
+    <article class="landing"><h3>First static article</h3><p>A wide, ordinary content card with a stable top edge.</p></article>
+    <article class="landing"><h3>Right-hand article</h3><p>Compare a static layout surface with the moving scene above.</p></article>
+    <article class="landing"><h3>Lower text and controls</h3><p><a href="#top" id="return-link">Return to the motion controls.</a></p><button type="button" id="lower-button">Stationary native button</button></article>
+    <article class="landing"><h3>Last static article</h3><p>There is no generated bridge or floor between the webpage's content surfaces.</p></article>
+  </section>
+</main>
+<footer><p>Motion belongs to this webpage and continues independently of the extension. Select a scene with the dropdown or a URL query such as ?scene=vertical.</p></footer>
+<script>
+  const scene = document.querySelector('#scene');
+  const experiments = document.querySelector('.experiments');
+  const transition = document.querySelector('#transition');
+  const javascript = document.querySelector('#javascript');
+  const status = document.querySelector('#status');
+  const waapi = document.querySelector('#waapi').animate([
+    { transform: 'translate(0px, 0px)' },
+    { transform: 'translate(120px, -90px)' },
+    { transform: 'translate(-90px, 80px)' },
+    { transform: 'translate(0px, 0px)' },
+  ], { duration: 7200, iterations: Infinity, easing: 'linear' });
+  let running = true;
+  let elapsed = 0;
+  let lastTime = performance.now();
+  let clicks = 0;
+
+  function alignSurface() {
+    const sceneTop = experiments.getBoundingClientRect().top + scrollY;
+    experiments.style.setProperty('--surface-top', `${Math.min(450, innerHeight - 140) - sceneTop}px`);
+  }
+
+  function setRunning(next) {
+    running = next;
+    lastTime = performance.now();
+    document.body.classList.toggle('motion-paused', !running);
+    for (const animation of document.getAnimations()) {
+      if (running) animation.play();
+      else animation.pause();
+    }
+    status.textContent = running ? 'Motion running' : 'Motion paused';
+  }
+
+  function resetMotion() {
+    elapsed = 0;
+    lastTime = performance.now();
+    transition.classList.add('resetting');
+    transition.classList.remove('far');
+    transition.getBoundingClientRect();
+    transition.classList.remove('resetting');
+    for (const animation of document.getAnimations()) animation.currentTime = 0;
+    waapi.currentTime = 0;
+    javascript.style.transform = 'translate(0px, 0px)';
+    setRunning(false);
+    status.textContent = 'Reset; motion paused';
+  }
+
+  function selectScene(value) {
+    for (const section of document.querySelectorAll('[data-scene]')) section.hidden = section.dataset.scene !== value;
+    alignSurface();
+    resetMotion();
+  }
+
+  document.querySelector('#pause').addEventListener('click', () => setRunning(false));
+  document.querySelector('#run').addEventListener('click', () => setRunning(true));
+  document.querySelector('#reset').addEventListener('click', resetMotion);
+  scene.addEventListener('change', () => {
+    selectScene(scene.value);
+    const url = new URL(location.href);
+    url.searchParams.set('scene', scene.value);
+    history.replaceState(null, '', url);
+  });
+  document.querySelector('#moving-button').addEventListener('click', event => {
+    clicks += 1;
+    event.currentTarget.textContent = `Click count: ${clicks}`;
+  });
+  document.querySelector('#return-link').addEventListener('click', event => {
+    event.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  document.querySelector('#lower-button').addEventListener('click', event => {
+    event.currentTarget.textContent = 'Stationary button clicked';
+  });
+  window.addEventListener('resize', alignSurface);
+  const requested = new URLSearchParams(location.search).get('scene');
+  if ([...scene.options].some(option => option.value === requested)) scene.value = requested;
+  selectScene(scene.value);
+  setRunning(true);
+
+  function frame(now) {
+    if (running) {
+      elapsed += Math.min(100, now - lastTime);
+      const phase = elapsed / 1600;
+      javascript.style.transform = `translate(${75 * Math.sin(phase)}px, ${60 * Math.sin(phase * 0.7)}px)`;
+      transition.classList.toggle('far', Math.floor(elapsed / 2200) % 2 === 0);
+    }
+    lastTime = now;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -4,15 +4,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   ctx.save(); ctx.translate(-sx, -sy);
   for (const p of level.platforms) {
-    if (p.kind === 'bridge') {
-      ctx.fillStyle = '#293940'; ctx.fillRect(p.x, p.y, p.width, 8);
-      ctx.strokeStyle = '#d9a34c'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.width, 8);
-      ctx.fillStyle = '#f4d08b'; ctx.fillRect(p.x + 5, p.y + 3, 3, 3); ctx.fillRect(p.x + p.width - 8, p.y + 3, 3, 3);
-    } else if (debug) {
-      ctx.strokeStyle = '#17b8b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.width, p.y); ctx.stroke();
+    if (debug) {
+      ctx.strokeStyle = p.moving ? '#e5b755' : '#17b8b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.width, p.y); ctx.stroke();
     }
     if (debug) {
-      const label = p.kind === 'bridge' ? 'steam bridge' : (p.label ?? 'DOM').slice(0, 28);
+      const label = (p.label ?? 'DOM').slice(0, 28);
       ctx.font = '10px monospace';
       ctx.fillStyle = '#17343ee6'; ctx.fillRect(p.x, p.y - 16, ctx.measureText(label).width + 4, 12);
       ctx.fillStyle = '#8fe8de'; ctx.fillText(label, p.x + 2, p.y - 6);

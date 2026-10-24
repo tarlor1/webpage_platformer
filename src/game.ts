@@ -1,7 +1,7 @@
-import { extractPlatforms } from './geometry';
-import { buildLevel } from './level';
+import { PageGeometry } from './geometry';
+import { buildLevel, outsidePage } from './level';
 import { Input } from './input';
-import { createPlayer, dropThrough, stepBody, supported } from './physics';
+import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from './physics';
 import { drawWorld } from './render';
 import { MOTION, OVERLAY_ID, type Body, type Level } from './types';
 
@@ -15,6 +15,14 @@ export class Game {
   private surface?: HTMLElement;
   private input?: Input;
   private level?: Level;
+  private geometry?: PageGeometry;
+  private motionTimer = 0;
+  private inspectedX = 0;
+  private inspectedY = 0;
+  private lastStanding?: { id: string; offset: number };
+  private pageHeight = 0;
+  private nextBoundsRead = 0;
+  private stranded = false;
   private player?: Body;
   private abort?: AbortController;
   private mutation?: MutationObserver;
@@ -36,8 +44,12 @@ export class Game {
     this.debug = false;
     this.facing = 1;
     this.lastHud = 0;
+    this.lastStanding = undefined;
+    this.stranded = false;
+    this.nextBoundsRead = 0;
     this.abort = new AbortController();
     const signal = this.abort.signal;
+    this.geometry = new PageGeometry();
     const host = document.createElement('div');
     host.id = OVERLAY_ID;
     // Only the small HUD intercepts clicks. The canvas never blocks the webpage.
@@ -70,10 +82,20 @@ export class Game {
     window.addEventListener('scroll', this.schedule, { signal, passive: true, capture: true });
     window.addEventListener('load', this.schedule, { signal, capture: true });
     window.addEventListener('popstate', this.schedule, { signal });
+    document.addEventListener('animationstart', this.schedule, { signal, capture: true });
+    document.addEventListener('animationend', this.schedule, { signal, capture: true });
+    document.addEventListener('transitionrun', this.schedule, { signal, capture: true });
+    document.addEventListener('transitionend', this.schedule, { signal, capture: true });
     window.visualViewport?.addEventListener('resize', this.schedule, { signal });
     document.addEventListener('visibilitychange', () => { this.last = 0; this.accumulator = 0; this.input?.clear(); }, { signal });
     this.mutation = new MutationObserver(records => {
-      if (records.some(r => !host.contains(r.target) && r.target !== host)) this.schedule();
+      let changed = false;
+      for (const record of records) {
+        if (host.contains(record.target) || record.target === host) continue;
+        this.geometry?.markChanged(record.target);
+        changed = true;
+      }
+      if (changed) this.schedule();
     });
     this.mutation.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'src'] });
     this.resize = new ResizeObserver(this.schedule);
@@ -82,6 +104,12 @@ export class Game {
     void document.fonts.ready.then(() => { if (this.active) this.schedule(); });
     this.lastUrl = location.href;
     this.rebuild();
+    // Only cached moving sources are measured here; full DOM scans stay debounced.
+    this.motionTimer = window.setInterval(() => {
+      this.geometry?.sampleMotion();
+      if (this.geometry?.needsRebuild) this.schedule();
+      if (performance.now() >= this.nextBoundsRead) this.measurePageBounds();
+    }, 16);
     focus();
     this.last = 0;
     this.frame = requestAnimationFrame(this.tick);
@@ -100,15 +128,15 @@ export class Game {
   };
 
   private rebuild(): void {
-    const old = this.player;
-    this.level = buildLevel(extractPlatforms(), old);
-    const level = this.level;
-    if (!old) this.respawn();
-    else {
-      const inView = old.x + old.width > scrollX && old.x < scrollX + innerWidth && old.y + old.height > scrollY && old.y < scrollY + innerHeight;
-      const safeBelow = level.platforms.some(p => p.y >= old.y + old.height - 2 && p.y - old.y < 240 && p.x < old.x + old.width && p.x + p.width > old.x);
-      if (!inView || (!supported(old, level.platforms) && (!safeBelow || old.grounded))) this.respawn();
+    this.level = buildLevel(this.geometry!.rebuild(this.player));
+    this.measurePageBounds();
+    if (!this.player && !this.placeAtSpawn()) {
+      // Empty pages still show the character, but never receive an invented floor.
+      this.player = createPlayer(scrollX + innerWidth / 2, scrollY + MOTION.height);
     }
+    this.inspectedX = this.player!.x;
+    this.inspectedY = this.player!.y;
+    this.host!.shadowRoot!.querySelector<HTMLButtonElement>('.respawn')!.disabled = !this.level.spawn;
     const ratio = Math.min(devicePixelRatio || 1, 3);
     this.canvas!.width = Math.round(innerWidth * ratio);
     this.canvas!.height = Math.round(innerHeight * ratio);
@@ -117,10 +145,70 @@ export class Game {
     this.ctx!.setTransform(ratio, 0, 0, ratio, 0, 0);
   }
 
+  private placeAtSpawn(): boolean {
+    const spawn = this.level?.spawn;
+    if (!spawn) return false;
+    this.player = createPlayer(spawn.x, spawn.y);
+    const surface = this.level!.platforms.find(p => Math.abs(p.y - spawn.y - MOTION.height) < 0.5
+      && spawn.x + MOTION.width > p.x && spawn.x < p.x + p.width);
+    if (surface) {
+      this.player.grounded = true;
+      this.player.platformId = surface.id;
+    }
+    this.commitMotion();
+    this.stranded = false;
+    this.rememberStanding();
+    this.coyote = this.jumpBuffer = this.accumulator = 0;
+    return true;
+  }
+
   private respawn(): void {
-    if (!this.level) return;
-    this.player = createPlayer(this.level.spawn.x, this.level.spawn.y);
-    this.coyote = this.jumpBuffer = 0;
+    // Manual recovery chooses a real surface in the current viewport.
+    this.level = buildLevel(this.geometry!.rebuild());
+    if (this.placeAtSpawn()) {
+      this.inspectedX = this.player!.x;
+      this.inspectedY = this.player!.y;
+    }
+  }
+
+  private measurePageBounds(): void {
+    this.pageHeight = Math.max(innerHeight, document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0);
+    this.nextBoundsRead = performance.now() + 250;
+  }
+
+  private rememberStanding(): void {
+    const player = this.player!;
+    if (!player.grounded || !player.platformId) return;
+    const platform = this.level!.platforms.find(p => p.id === player.platformId);
+    if (!platform) return;
+    if (this.lastStanding) {
+      this.lastStanding.id = platform.id;
+      this.lastStanding.offset = player.x - platform.x;
+    } else {
+      this.lastStanding = { id: platform.id, offset: player.x - platform.x };
+    }
+    this.geometry!.retainPlatform(platform.id);
+  }
+
+  private restoreLastStanding(): boolean {
+    const saved = this.lastStanding;
+    const platform = saved && this.level!.platforms.find(p => p.id === saved.id);
+    if (!platform) return false;
+    respawnOnPlatform(this.player!, platform, saved!.offset);
+    this.stranded = false;
+    this.input!.clear();
+    this.coyote = this.jumpBuffer = this.accumulator = 0;
+    this.inspectedX = this.player!.x;
+    this.inspectedY = this.player!.y;
+    return true;
+  }
+
+  private commitMotion(): void {
+    for (const p of this.level!.platforms) {
+      p.previousX = p.x;
+      p.previousY = p.y;
+      p.previousWidth = p.width;
+    }
   }
 
   private tick = (now: number): void => {
@@ -129,11 +217,12 @@ export class Game {
     const elapsed = this.last ? Math.min((now - this.last) / 1000, 0.1) : 0;
     this.last = now;
     const input = this.input!, player = this.player!, level = this.level!;
-    if (input.focused) {
+    if (input.focused && !this.stranded) {
       if (input.jump) this.jumpBuffer = 0.13;
       input.jump = false;
       this.accumulator += elapsed;
-      while (this.accumulator >= MOTION.step) {
+      const steps = Math.floor(this.accumulator / MOTION.step);
+      for (let index = 0; index < steps; index++) {
         const dt = MOTION.step;
         this.coyote = player.grounded ? 0.09 : Math.max(0, this.coyote - dt);
         if (input.drop) {
@@ -143,19 +232,47 @@ export class Game {
         this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
         player.vx = (Number(input.right) - Number(input.left)) * MOTION.speed;
         if (player.vx) this.facing = Math.sign(player.vx);
-        if (this.jumpBuffer > 0 && this.coyote > 0) { player.vy = -MOTION.jump; player.grounded = false; this.coyote = this.jumpBuffer = 0; }
-        stepBody(player, level.platforms, dt);
+        if (this.jumpBuffer > 0 && this.coyote > 0) {
+          player.vy = -MOTION.jump;
+          player.grounded = false;
+          this.coyote = this.jumpBuffer = 0;
+        }
+        stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps);
         this.accumulator -= dt;
-        if (player.y > Math.min(level.bounds.bottom + 150, scrollY + innerHeight + 160) || player.x < level.bounds.left - 120 || player.x > level.bounds.right + 120) { this.respawn(); break; }
+        this.rememberStanding();
+        if (outsidePage(player, this.pageHeight)) {
+          if (!this.restoreLastStanding()) {
+            // No real checkpoint exists (empty page or removed surface). Stop the
+            // fall without inventing a floor or relocating into the viewport.
+            this.stranded = true;
+            player.vx = player.vy = this.accumulator = 0;
+          }
+          break;
+        }
       }
-    } else { input.clear(); this.accumulator = 0; }
+      if (steps) this.commitMotion();
+    } else {
+      input.clear();
+      this.accumulator = 0;
+      if (!this.stranded) {
+        carryBody(player, level.platforms);
+        this.rememberStanding();
+      }
+      this.commitMotion();
+    }
+    if (Math.abs(player.x - this.inspectedX) > 200 || Math.abs(player.y - this.inspectedY) > 200) this.schedule();
     drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
-      this.status!.textContent = input.focused ? 'Game focused · explore the page' : 'Paused · page controls are free';
+      const offscreen = player.x + player.width < scrollX || player.x > scrollX + innerWidth
+        || player.y + player.height < scrollY || player.y > scrollY + innerHeight;
+      this.status!.textContent = this.stranded
+        ? 'Last platform unavailable · use Respawn or restart'
+        : offscreen ? 'Character offscreen · scroll back or use Respawn'
+        : input.focused ? 'Game focused · explore the page' : 'Paused · page controls are free';
       if (this.debug) {
         const p = this.player!;
-        this.detail!.textContent = `DOM ${level.measured} · bridges ${level.platforms.filter(p => p.kind === 'bridge').length}\nx ${p.x.toFixed(1)} y ${p.y.toFixed(1)} · vy ${p.vy.toFixed(1)}\n${p.grounded ? 'GROUNDED' : 'AIRBORNE'} · ${level.platforms.length} platforms\nteal: DOM · brass: bridge · red: player`;
+        this.detail!.textContent = `DOM ${level.platforms.length} · moving ${level.platforms.filter(p => p.moving).length}\nx ${p.x.toFixed(2)} y ${p.y.toFixed(2)} · vy ${p.vy.toFixed(2)}\n${p.grounded ? 'GROUNDED' : 'AIRBORNE'} · on ${p.platformId ?? 'none'}\nteal: DOM · gold: moving · red: player`;
       }
     }
     this.frame = requestAnimationFrame(this.tick);
@@ -166,11 +283,15 @@ export class Game {
     this.active = false;
     cancelAnimationFrame(this.frame);
     clearTimeout(this.timer);
+    clearInterval(this.motionTimer);
+    this.motionTimer = 0;
     this.timer = 0;
     this.abort?.abort();
     this.input?.dispose();
     this.mutation?.disconnect();
     this.resize?.disconnect();
+    this.geometry?.clear();
+    this.geometry = undefined;
     this.host?.remove();
     this.player = undefined;
     this.level = undefined;

@@ -2,12 +2,13 @@
   "name": "steel-steam-webpage-platformer",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "bun@1.4.4",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "watch": "node build.mjs --watch",
+    "build": "bun build.mjs",
+    "watch": "bun build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/run.mjs",
+    "test": "bun test ./tests",
     "fixture": "python3 -m http.server 8080 --bind 127.0.0.1"
   },
   "devDependencies": {
