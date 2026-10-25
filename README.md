@@ -49,6 +49,8 @@ Grounded characters remain attached to their current original platform when scro
 
 ## Coins, levels, and rare equipment
 
+The player uses `src/assets/player.png`. To swap artwork, replace that PNG and adjust the source rectangle, integer scale, and original facing direction in `src/rendering/player-sprite.ts`. The renderer anchors the image at the center of the player's feet, uses nearest-neighbor scaling, and caches its visibility outline. Sprite dimensions do not change the collision box. PNG bytes are bundled into the extension, so no external image requests or asset permissions are needed. The current image is static; animated sprite sheets can be added through the same renderer later.
+
 Generation version 3 rolls **every encounter type independently for each logical platform**: coins have a **10% (1-in-10)** chance and world boots have a **0.25% (1-in-400)** chance. All successful types spawn, so a platform can have coins, boots, both, or neither. Each type uses separate deterministic roll and reward seed domains; there is no ranking or competition.
 
 A successful coin roll adds **3–7 coins**, whether or not equipment also spawns. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins can be spent at the merchant. Collecting coins does not award equipment; boots require their own physical pickup.

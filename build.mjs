@@ -10,6 +10,7 @@ const options = {
   entryPoints,
   outdir: 'dist',
   bundle: true,
+  loader: { '.png': 'binary' },
   platform: 'browser',
   format: 'iife',
   target: 'chrome120',

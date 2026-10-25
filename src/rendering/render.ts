@@ -2,6 +2,7 @@ import type { Body, Level } from '../engine/types';
 import { drawScenery } from './scenery-art';
 import type { SceneryScene } from './scenery-types';
 import type { PagePickup } from '../progression/progression-types';
+import { playerSprite } from './player-sprite';
 export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: Body, debug: boolean, facing: number, scenery: SceneryScene, pickups: readonly PagePickup[], collected: ReadonlySet<string>, jumpBoots: boolean, gliding = false): void {
   const sx = scrollX, sy = scrollY;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
@@ -53,34 +54,14 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
     }
   }
   const { x, y, width: w, height: h } = player;
-  // Trace the sprite silhouette rather than outlining its rectangular hitbox.
-  // Adds an outline to the player
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(x + 2, y); ctx.lineTo(x + w - 2, y);
-  ctx.lineTo(x + w - 2, y + 9); ctx.lineTo(x + w, y + 9);
-  ctx.lineTo(x + w, y + 17); ctx.lineTo(x + w - 3, y + 17);
-  ctx.lineTo(x + w - 3, y + h - 5); ctx.lineTo(x + w - 1, y + h - 5);
-  ctx.lineTo(x + w - 1, y + h); ctx.lineTo(x + 1, y + h);
-  ctx.lineTo(x + 1, y + h - 5); ctx.lineTo(x + 3, y + h - 5);
-  ctx.lineTo(x + 3, y + 17); ctx.lineTo(x, y + 17);
-  ctx.lineTo(x, y + 9); ctx.lineTo(x + 2, y + 9); ctx.closePath();
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#15212b'; ctx.lineWidth = 6; ctx.stroke();
-  ctx.strokeStyle = '#fff4d6'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.restore();
-
-  // Fills in the player
-  ctx.fillStyle = '#202f39'; ctx.fillRect(x + 3, y + 10, w - 6, h - 10);
-  ctx.fillStyle = '#70878b'; ctx.fillRect(x, y + 9, w, 8); ctx.fillRect(x + 2, y, w - 4, 13);
-  ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + (facing > 0 ? 11 : 3), y + 4, 8, 5);
+  const spriteDrawn = playerSprite.draw(ctx, x + w / 2, y + h, facing);
+  if (!spriteDrawn) drawDefaultPlayer(ctx, player, facing, jumpBoots);
   if (gliding) {
     ctx.fillStyle = '#d5a653';
     ctx.fillRect(x - 9, y - 8, w + 18, 3);
     ctx.fillStyle = '#f5cb7d';
     ctx.fillRect(x - 5, y - 5, 3, 5); ctx.fillRect(x + w + 2, y - 5, 3, 5);
   }
-  ctx.fillStyle = jumpBoots ? '#9bbfc8' : '#d3a159'; ctx.fillRect(x + 1, y + h - 5, 8, 5); ctx.fillRect(x + w - 9, y + h - 5, 8, 5);
   if (debug) { ctx.strokeStyle = '#e04467'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h); }
   ctx.restore();
 }
@@ -105,4 +86,31 @@ function drawShopkeeper(ctx: CanvasRenderingContext2D, scenery: SceneryScene): v
   ctx.beginPath(); ctx.arc(x + 4, y + 16, 2, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(x + 26, y + 16, 2, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
+}
+
+/** Original character remains visible while the image loads or if decoding fails. */
+function drawDefaultPlayer(ctx: CanvasRenderingContext2D, player: Body, facing: number, jumpBoots: boolean): void {
+  const { x, y, width: w, height: h } = player;
+  // Trace the sprite silhouette rather than outlining its rectangular hitbox.
+  // Adds an outline to the player
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y); ctx.lineTo(x + w - 2, y);
+  ctx.lineTo(x + w - 2, y + 9); ctx.lineTo(x + w, y + 9);
+  ctx.lineTo(x + w, y + 17); ctx.lineTo(x + w - 3, y + 17);
+  ctx.lineTo(x + w - 3, y + h - 5); ctx.lineTo(x + w - 1, y + h - 5);
+  ctx.lineTo(x + w - 1, y + h); ctx.lineTo(x + 1, y + h);
+  ctx.lineTo(x + 1, y + h - 5); ctx.lineTo(x + 3, y + h - 5);
+  ctx.lineTo(x + 3, y + 17); ctx.lineTo(x, y + 17);
+  ctx.lineTo(x, y + 9); ctx.lineTo(x + 2, y + 9); ctx.closePath();
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#15212b'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.strokeStyle = '#fff4d6'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.restore();
+
+  // Fills in the player
+  ctx.fillStyle = '#202f39'; ctx.fillRect(x + 3, y + 10, w - 6, h - 10);
+  ctx.fillStyle = '#70878b'; ctx.fillRect(x, y + 9, w, 8); ctx.fillRect(x + 2, y, w - 4, 13);
+  ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + (facing > 0 ? 11 : 3), y + 4, 8, 5);
+  ctx.fillStyle = jumpBoots ? '#9bbfc8' : '#d3a159'; ctx.fillRect(x + 1, y + h - 5, 8, 5); ctx.fillRect(x + w - 9, y + h - 5, 8, 5);
 }
