@@ -31,13 +31,14 @@ For development, `bun run watch` rebuilds TypeScript changes. After changing the
 | Control | Action |
 | --- | --- |
 | A / D or ← / → | Run left / right |
-| Space / W / ↑ | Jump; pass upward through platforms |
+| Space / W / ↑ | Jump; hold while descending in mid-air to glide |
 | S / ↓ | Drop through the platform you are standing on; tap again for another level |
+| E | Talk to the nearby shopkeeper and open the shop |
 | B or **Debug** | Toggle terrain edges, player collision box, coordinates, and grounded state; gold edges identify actual moving DOM terrain |
 | **Focus game** | Return keyboard control to the game |
 | **Find player** | Show a large arrow that shrinks toward the player, then fades; offscreen players are indicated at the viewport edge |
 | **Respawn** | Explicitly move to a currently visible original webpage surface |
-| **Inventory → Equip / Unequip** | Manage owned boots; inventory controls retain keyboard focus and pause gameplay |
+| **Inventory → Equip / Unequip** | Manage owned equipment; inventory controls retain keyboard focus and pause gameplay |
 | Escape, HUD **Stop**, or popup **Stop platforming** | Remove the game overlay |
 
 Only the focused game surface takes movement keys. Clicking inventory controls, a search box, a page link, or another webpage element pauses keyboard gameplay and airborne motion. Grounded riders still follow their moving DOM support. Window blur and hidden tabs pause gameplay too. Use **Focus game** to resume. Escape stops when the game owns focus; page controls may consume Escape, so the HUD Stop button is also available.
@@ -48,13 +49,17 @@ Grounded characters remain attached to their current original platform when scro
 
 ## Coins, levels, and rare equipment
 
-Generation version 3 rolls **every encounter type independently for each logical platform**: coins have a **10% (1-in-10)** chance and rare boots have a **1% (1-in-100)** chance. All successful types spawn, so a platform can have coins, boots, both, or neither. There is no ranking or competition between types; neither type forces or suppresses the other. Each type uses its own deterministic roll seed domain and a separate reward seed domain for its reward attributes.
+Generation version 3 rolls **every encounter type independently for each logical platform**: coins have a **10% (1-in-10)** chance and world boots have a **0.25% (1-in-400)** chance. All successful types spawn, so a platform can have coins, boots, both, or neither. Each type uses separate deterministic roll and reward seed domains; there is no ranking or competition.
 
-A successful coin roll adds **3–7 coins**, whether or not equipment also spawns. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic. Collecting coins does not award equipment; any boots on the platform require their own physical pickup.
+A successful coin roll adds **3–7 coins**, whether or not equipment also spawns. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins can be spent at the merchant. Collecting coins does not award equipment; boots require their own physical pickup.
 
-A successful equipment roll adds **one visible pair of rare boots**, whether or not coins also spawn. Walk into the boots to own them, with no coin, completion, or level prerequisite. The URL and logical platform determine the successful encounter types, coin count, and equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
+Among world boot drops, rarity weights are common 60%, uncommon 25%, rare 10%, epic 4%, and legendary 1%. Walk into them to own them, with no coin, completion, or level prerequisite. The merchant sells gliders; gliders never spawn in the world. The URL and logical platform determine the coin count and boot rarity; each rarity has fixed stats, name, and color. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
 
-Open **Inventory** in the HUD to see owned items, rarity, effects, and equipped status. **Equip** or **Unequip** saves immediately. One boots slot is active at a time, with no stacking. New boots increase jump velocity by a seeded **15–25%**, producing approximately **32–56% greater ideal jump height** at unchanged gravity. The effect applies to subsequent jumps; equipped boots also change the character's footwear color. Previously earned boots retain their attributes.
+Open **Inventory** in the HUD to see owned items, rarity, effects, and equipped status. **Equip** or **Unequip** saves immediately. One pair of boots and one glider can be equipped together. Equipping, unequipping, or selling an item changes only its own slot. Existing single-item saves migrate the selected item into its matching slot. Boot jump multipliers increase strictly by rarity: **common 1.20×, uncommon 1.35×, rare 1.50×, epic 1.70×, legendary 1.90×**. The effect applies to subsequent jumps; equipped boots also change the character's footwear color. Previously earned boots migrate to their rarity's current name and stats while retaining each instance and equipped selection.
+
+The shopkeeper sells only **Springheel Boots (common, 12 coins)** and a **Pocket Glider (20 coins)**. **Coppercoil (common), Piston (uncommon), Skybound (rare), Cloudstep (epic), and Vaulting (legendary)** boots are world drops only. Coppercoil has the same strength and sell value as Springheel. Buying an item equips it automatically when its slot is empty; otherwise, the current selection is preserved and the purchase can be equipped from Inventory. The glider activates while descending when Space is held. Selling boots returns **6/15/30/60/120 coins**, in rarity order; the glider sells for **10 coins**. Springheel and the glider sell for less than their purchase prices.
+
+Equipment catalog IDs use `name:rarity:type`, such as `coppercoil-boots:common:boots`. Each owned copy also has a unique `instanceId`, used for equipping and selling just that copy. Identical boots found on different platforms can all be collected and sold; owning one does not suppress other drops. The shop blocks buying an identical name/rarity/type while any copy is owned, but permits buying it again after all copies are sold. Each world source is collected once, so reloading or replaying a storage event does not restore a sold drop. Existing saves migrate without merging inventory copies or changing coin/encounter claims.
 
 Pickups are registered across the discovered level and indexed in spatial buckets. Drawing queries every pickup intersecting the viewport, with no nearest-pickup drawing cap; collection uses a separate local query around the player's body. Moving the player does not hide otherwise visible pickups. Encounter definitions and seeded population decisions are cached during incremental discovery.
 
@@ -77,8 +82,8 @@ After updating, reload the extension in `chrome://extensions`, refresh the webpa
 ## Short demonstration
 
 1. Serve the fixtures as described below and open **`http://127.0.0.1:8080/fixtures/progression.html`**.
-2. Activate the extension with a fresh profile. On the lower button, walk into the visible **Piston Boots** with **0 coins**; this fixture's independent coin roll produces no coins.
-3. Open **Inventory**, choose **Equip**, then click **Focus game**. Equipment is always equipped manually.
+2. Activate the extension with a fresh profile. On the lower button, walk into the visible **Coppercoil Boots**; this fixture also has seven independently spawned coins.
+3. Open **Inventory**, choose **Equip**, then click **Focus game**. World pickups are equipped manually; purchases auto-equip only when their slot is empty.
 4. Stand beneath the upper original button and jump. Its **160-pixel rise** is beyond the base jump and reachable with these boots.
 5. Enable Debug to inspect native terrain edges, scroll to check grounded support, and use Down to drop through. Escape stops the game; starting again should leave one character and HUD.
 
@@ -90,7 +95,7 @@ bun run fixture
 
 This uses Python 3 to serve `http://127.0.0.1:8080`. Open a fixture and activate the extension; no file-URL permissions are needed.
 
-The default progression fixture selects a normal generation-v3 seed that places **Piston Boots** (1.2× jump velocity) on its lower `foundry-workshop-3055` button, with no coins on that platform. This is an authored fixture seed, not a debug grant or engine exception. Walking into the boots requires neither a jump nor coins. Other platforms may independently receive coin encounters. After manual Equip, the upper button demonstrates the 160-pixel jump. A different hostname or port changes the seed and may place different equipment or no reward. Saved ownership is separate from activation and per-page coordinates; see the verification record for the scope of exercised restart checks.
+The default progression fixture uses generation-v3 identity `foundry-workshop-700`, which produces **Coppercoil Boots** (1.2× jump velocity) and seven independently rolled coins on its lower original button. This is an authored fixture seed, not a debug grant or engine exception. Walking into the boots requires neither a jump nor coins. After manual Equip, the upper button demonstrates the 160-pixel jump. A different hostname or port changes the seed and may place different equipment or no reward. Saved ownership is separate from activation and per-page coordinates; see the verification record for the scope of exercised restart checks.
 
 
 - `fixtures/progression.html`: original lower/upper buttons for coin collection, rare rewards, and a 160-pixel equipment-gated jump.

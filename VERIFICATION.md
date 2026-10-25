@@ -1,6 +1,12 @@
 # Verification record
 
-## Current generation-v3 encounter policy
+## Rarity, shop, and glider merge
+
+Resolved the encounter and test conflicts while retaining independent coin/equipment rolls, encounter-v3 claim identities, one currency per coin, video loot exclusion, rarity-tier boots, per-copy inventory IDs, and separate boots/glider slots. The integrated world-boot chance is 1-in-400, with the feature branch's weighted rarity table. The default progression fixture now uses measured identity `foundry-workshop-700`: seven coins plus common Coppercoil Boots at 1.2× jump velocity.
+
+Typecheck, 181 tests across 13 files, and the production build passed. A throwaway runtime smoke exercised the actual generator, pickup planner, player-state transitions, and physics: the fixture produced eight pickups; canonical v3 equipment claimed successfully; earned coins bought a glider; boots and glider slots coexisted; selling boots preserved the glider slot; serialized state restored; a sold world drop could not be reclaimed. After 120 fixed steps, free-fall speed was about 1600 CSS px/s and gliding speed was capped at 55 CSS px/s. No fresh browser/shop-modal visual or browser-restart check was performed for this merge. Earlier fixture seeds, stats, and drop-rate observations below describe their historical builds.
+
+## Historical pre-merge generation-v3 encounter policy
 
 Every encounter type rolls independently for each logical platform. Coins have a 10% (1-in-10) chance and boots have a 1% (1-in-100) chance. Every successful type spawns: a platform can contain 3–7 coins, one pair of boots, both, or neither. Types do not rank or compete, and neither forces or suppresses the other. Each type retains its existing deterministic roll seed domain and separate reward seed domain.
 

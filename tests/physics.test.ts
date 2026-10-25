@@ -74,6 +74,17 @@ test('drop input in midair cannot add downward speed or cancel a jump', () => {
   assert.equal(body.vy, -500);
 });
 
+test('gliding caps descent while held and normal gravity resumes when released', () => {
+  const gliding = createPlayer(20, 0);
+  gliding.vy = 300;
+  for (let i = 0; i < 20; i++) stepBody(gliding, [], MOTION.step, 0, 1, true);
+  assert.ok(gliding.vy <= 55);
+  const normal = createPlayer(20, 0);
+  normal.vy = 300;
+  stepBody(normal, [], MOTION.step);
+  assert.ok(normal.vy > gliding.vy);
+});
+
 test('standing riders retain their horizontal offset while moving independently', () => {
   const platform: Platform = { id: 'belt', previousX: 0, x: 80, y: 100, width: 200 };
   const body = standing(platform);

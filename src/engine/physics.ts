@@ -101,7 +101,7 @@ export function carryBody(body: Body, platforms: readonly Platform[], from = 0, 
 }
 
 /** Lock valid support; airborne feet sweep relative to interpolated one-way tops. */
-export function stepBody(body: Body, platforms: readonly Platform[], dt: number, from = 0, to = 1): void {
+export function stepBody(body: Body, platforms: readonly Platform[], dt: number, from = 0, to = 1, gliding = false): void {
   releaseDetachedTop(body, platforms, from);
   const rider = riderPlatform(body, platforms, from);
   const oldX = body.x;
@@ -112,7 +112,10 @@ export function stepBody(body: Body, platforms: readonly Platform[], dt: number,
     carryX = at(rider.previousX, rider.x, to) - at(rider.previousX, rider.x, from);
     carryY = at(rider.previousY, rider.y, to) - at(rider.previousY, rider.y, from);
   }
-  if (!rider) body.vy += MOTION.gravity * dt;
+  if (!rider) {
+    body.vy += (gliding && body.vy >= 0 ? MOTION.gravity * 0.12 : MOTION.gravity) * dt;
+    if (gliding && body.vy > 55) body.vy = 55;
+  }
   body.x += body.vx * dt + carryX;
   body.y += rider ? carryY : body.vy * dt;
   body.grounded = false;

@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encounterForPlatform } from '../src/progression/encounters';
+import { worldEquipmentId } from '../src/progression/equipment-id';
+import { createBoot } from '../src/progression/boots';
+import { sellValue } from '../src/progression/shop';
 import {
   EQUIPMENT_STORAGE_PREFIX, LEGACY_PLAYER_STORAGE_KEY, PLAYER_STORAGE_KEY,
   type PlayerState, type ProgressionResponse,
@@ -27,12 +30,14 @@ function coinEncounter(url: string, prefix = 'coins') {
 test('worker recovers durable ownership and serializes storage pickups with coin and equip requests', async () => {
   const originalChrome = globalThis.chrome;
   const originalConsoleError = console.error;
-  const legacyBoots = { id: 'legacy-boots', name: 'Old Boots', slot: 'boots', rarity: 'rare', jumpMultiplier: 1.2, description: 'Legacy reward.' };
+  const legacyBoots = { id: 'old-boots:rare:boots', name: 'Old Boots', slot: 'boots', rarity: 'rare', jumpMultiplier: 1.2, description: 'Legacy reward.' };
   const legacy = { version: 1, revision: 5, coins: 15, xp: 60, level: 1, inventory: [legacyBoots], equippedItemId: legacyBoots.id,
     completedEncounters: ['encounter-v1:old'], claimedRewards: ['encounter-v1:old'], collectedCoins: ['encounter-v1:old:coin:0'] };
   const startupEncounter = equipmentEncounter('https://example.com/before-worker-started');
   const startupOwnership = { encounterId: startupEncounter.id, equipment: startupEncounter.equipment };
-  const startupKey = EQUIPMENT_STORAGE_PREFIX + startupEncounter.equipment.id;
+  const legacyOwned = { ...createBoot('rare'), instanceId: `legacy:${legacyBoots.id}` };
+  const startupOwned = { ...startupEncounter.equipment, instanceId: worldEquipmentId(startupEncounter.id) };
+  const startupKey = EQUIPMENT_STORAGE_PREFIX + startupEncounter.id;
   const storage: Record<string, unknown> = {
     [LEGACY_PLAYER_STORAGE_KEY]: structuredClone(legacy),
     [startupKey]: structuredClone(startupOwnership),
@@ -83,9 +88,10 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(writes, 1, 'migration and ownership recovery share one queued commit');
     for (const result of loaded) {
       if (!result.ok) assert.fail(result.error);
+      const { equippedItemId: _oldSelection, ...legacyFields } = legacy;
       assert.deepEqual(result.state, {
-        ...legacy, version: 2, revision: legacy.revision + 1,
-        inventory: [legacyBoots, startupEncounter.equipment],
+        ...legacyFields, version: 2, revision: legacy.revision + 1,
+        inventory: [legacyOwned, startupOwned], equippedItems: { boots: legacyOwned.instanceId, glider: null },
         claimedRewards: [...legacy.claimedRewards, startupEncounter.id],
         completedEncounters: [...legacy.completedEncounters, startupEncounter.id],
       });
@@ -98,7 +104,8 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     const coins = encounter;
     const logicalKey = coins.logicalKey;
     const ownership = { encounterId: encounter.id, equipment: encounter.equipment };
-    const ownershipKey = EQUIPMENT_STORAGE_PREFIX + encounter.equipment.id;
+    const owned = { ...encounter.equipment, instanceId: worldEquipmentId(encounter.id) };
+    const ownershipKey = EQUIPMENT_STORAGE_PREFIX + encounter.id;
     const requests = Array.from({ length: coins.coinCount }, (_, index) =>
       [send({ type: 'progress:collect', url, logicalKey, index }, 1),
         send({ type: 'progress:collect', url: `${url}?utm_source=tab#heading`, logicalKey, index }, 2)]).flat();
@@ -115,8 +122,8 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(final.state.coins, legacy.coins + coins.coinCount);
     assert.equal(final.state.xp, legacy.xp + coins.coinCount * 20);
     assert.equal(final.state.revision, legacy.revision + coins.coinCount + 2);
-    assert.deepEqual(final.state.inventory, [legacyBoots, startupEncounter.equipment, encounter.equipment]);
-    assert.equal(final.state.equippedItemId, legacyBoots.id);
+    assert.deepEqual(final.state.inventory, [legacyOwned, startupOwned, owned]);
+    assert.deepEqual(final.state.equippedItems, { boots: legacyOwned.instanceId, glider: null });
     assert.equal(final.state.claimedRewards.filter(id => id === encounter.id).length, 1);
     assert.deepEqual(new Set(final.state.completedEncounters),
       new Set([...legacy.completedEncounters, startupEncounter.id, coins.id, encounter.id]));
@@ -132,13 +139,13 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(writes, beforeDuplicate);
 
     const [equipped] = await Promise.all([
-      send({ type: 'progress:equip', itemId: startupEncounter.equipment.id }),
+      send({ type: 'progress:equip', itemId: startupOwned.instanceId }),
       mockChrome.storage.local.set({ [ownershipKey]: ownership }),
     ]);
     if (!equipped.ok) throw new Error(equipped.error);
     const afterEquip = await send({ type: 'progress:get' });
     if (!afterEquip.ok) throw new Error(afterEquip.error);
-    assert.equal(afterEquip.state.equippedItemId, startupEncounter.equipment.id);
+    assert.equal(afterEquip.state.equippedItems.boots, startupOwned.instanceId);
     assert.equal(afterEquip.state.coins, final.state.coins);
     assert.deepEqual(afterEquip.state.inventory, final.state.inventory);
     assert.equal(afterEquip.state.revision, final.state.revision + 1);
@@ -153,6 +160,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
       { type: 'progress:collect', url, logicalKey: equipmentEncounter(url).logicalKey, index: 0 },
       { type: 'progress:collect-equipment', url, logicalKey },
       { type: 'progress:equip', itemId: 42 },
+      { type: 'progress:equip', itemId: null, slot: 'hat' },
       { type: 'progress:equip', itemId: 'unowned' },
       { type: 'progress:unknown' },
     ]) assert.equal((await send(request)).ok, false);
@@ -170,7 +178,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
 
     const interrupted = equipmentEncounter('https://example.com/interrupted-index');
     const interruptedOwnership = { encounterId: interrupted.id, equipment: interrupted.equipment };
-    const interruptedKey = EQUIPMENT_STORAGE_PREFIX + interrupted.equipment.id;
+    const interruptedKey = EQUIPMENT_STORAGE_PREFIX + interrupted.id;
     const indexingFailure = Promise.withResolvers<void>();
     let indexingErrors = 0;
     console.error = () => { indexingErrors++; indexingFailure.resolve(); };
@@ -185,11 +193,12 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.deepEqual(storage[interruptedKey], interruptedOwnership);
     const recoveredOwnership = await send({ type: 'progress:get' });
     if (!recoveredOwnership.ok) throw new Error(recoveredOwnership.error);
-    assert.deepEqual(recoveredOwnership.state.inventory, [...afterEquip.state.inventory, interrupted.equipment]);
+    assert.deepEqual(recoveredOwnership.state.inventory, [...afterEquip.state.inventory,
+      { ...interrupted.equipment, instanceId: worldEquipmentId(interrupted.id) }]);
     assert.equal(recoveredOwnership.state.claimedRewards.filter(id => id === interrupted.id).length, 1);
     assert.equal(recoveredOwnership.state.coins, afterEquip.state.coins);
     assert.equal(recoveredOwnership.state.xp, afterEquip.state.xp);
-    assert.equal(recoveredOwnership.state.equippedItemId, startupEncounter.equipment.id);
+    assert.equal(recoveredOwnership.state.equippedItems.boots, startupOwned.instanceId);
     assert.equal(fullReads, 3);
     assert.equal(indexingErrors, 1);
     assert.deepEqual(storage[interruptedKey], interruptedOwnership);
@@ -201,7 +210,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     if (!recovered.ok) throw new Error(recovered.error);
     assert.equal(recovered.state.coins, final.state.coins + 1);
     assert.deepEqual(recovered.state.inventory, recoveredOwnership.state.inventory);
-    assert.equal(recovered.state.equippedItemId, startupEncounter.equipment.id);
+    assert.equal(recovered.state.equippedItems.boots, startupOwned.instanceId);
     const retried = await send(retry);
     if (!retried.ok) throw new Error(retried.error);
     assert.equal(retried.duplicate, true);
@@ -212,14 +221,15 @@ test('worker recovers durable ownership and serializes storage pickups with coin
       const bothUrl = `https://example.com/both-order-${equipmentFirst}`;
       const both = equipmentEncounter(bothUrl, true);
       const bothOwnership = { encounterId: both.id, equipment: both.equipment };
-      const bothOwnershipKey = EQUIPMENT_STORAGE_PREFIX + both.equipment.id;
+      const bothOwnershipKey = EQUIPMENT_STORAGE_PREFIX + both.id;
+      const bothOwned = { ...both.equipment, instanceId: worldEquipmentId(both.id) };
       const before = await send({ type: 'progress:get' });
       if (!before.ok) throw new Error(before.error);
       if (equipmentFirst) {
         await mockChrome.storage.local.set({ [bothOwnershipKey]: bothOwnership });
         const equipmentOnly = await send({ type: 'progress:get' });
         if (!equipmentOnly.ok) throw new Error(equipmentOnly.error);
-        assert.deepEqual(equipmentOnly.state.inventory, [...before.state.inventory, both.equipment]);
+        assert.deepEqual(equipmentOnly.state.inventory, [...before.state.inventory, bothOwned]);
         assert.equal(equipmentOnly.state.coins, before.state.coins);
         assert.equal(equipmentOnly.state.xp, before.state.xp);
         assert.deepEqual(equipmentOnly.state.collectedCoins, before.state.collectedCoins);
@@ -241,8 +251,8 @@ test('worker recovers durable ownership and serializes storage pickups with coin
       assert.equal(completed.state.coins, before.state.coins + both.coinCount);
       assert.equal(completed.state.xp, before.state.xp + both.coinCount * 20);
       assert.equal(completed.state.revision, before.state.revision + both.coinCount + 1);
-      assert.deepEqual(completed.state.inventory, [...before.state.inventory, both.equipment]);
-      assert.equal(completed.state.equippedItemId, before.state.equippedItemId);
+      assert.deepEqual(completed.state.inventory, [...before.state.inventory, bothOwned]);
+      assert.deepEqual(completed.state.equippedItems, before.state.equippedItems);
       assert.equal(completed.state.claimedRewards.filter(id => id === both.id).length, 1);
       assert.equal(completed.state.completedEncounters.filter(id => id === both.id).length, 1);
       const beforeRepeats: number = writes;
@@ -256,6 +266,23 @@ test('worker recovers durable ownership and serializes storage pickups with coin
       assert.equal(writes, beforeRepeats);
       assert.deepEqual(storage[PLAYER_STORAGE_KEY], completed.state);
     }
+
+    const beforeShop = await send({ type: 'progress:get' });
+    if (!beforeShop.ok) throw new Error(beforeShop.error);
+    // Shop requests address owned instances, including long world-source IDs.
+    const sold = await send({ type: 'progress:sell', itemId: startupOwned.instanceId });
+    if (!sold.ok) throw new Error(sold.error);
+    assert.equal(sold.state.coins, beforeShop.state.coins + sellValue(startupOwned));
+    assert.equal(sold.state.equippedItems.boots, null);
+    assert.ok(!sold.state.inventory.some(item => item.instanceId === startupOwned.instanceId));
+    assert.equal((await send({ type: 'progress:sell', itemId: startupOwned.instanceId })).ok, false);
+    await mockChrome.storage.local.set({ [startupKey]: startupOwnership });
+    const afterReplay = await send({ type: 'progress:get' });
+    if (!afterReplay.ok) throw new Error(afterReplay.error);
+    assert.deepEqual(afterReplay.state, sold.state, 'ownership replay cannot restore sold loot');
+    const bought = await Promise.all([send({ type: 'progress:buy', itemId: 'springheel-boots:common:boots' }, 1),
+      send({ type: 'progress:buy', itemId: 'springheel-boots:common:boots' }, 2)]);
+    assert.equal(bought.filter(result => result.ok).length, 1, 'concurrent identical purchases charge once');
   } finally {
     globalThis.chrome = originalChrome;
     console.error = originalConsoleError;

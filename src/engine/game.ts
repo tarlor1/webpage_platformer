@@ -15,9 +15,11 @@ import { PickupIndex, planPickups, updatePickups } from '../progression/collecti
 import { requestProgression } from '../progression/progression-client';
 import { mountProgressionUI, type ProgressionPanel } from '../ui/progression-ui';
 import { mountMovablePanel } from '../ui/movable-panel';
+import { mountShopUI, type ShopPanel } from '../ui/shop-ui';
 import { EQUIPMENT_STORAGE_PREFIX, PLAYER_STORAGE_KEY, type EquipmentOwnership, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
 import { beginMeasurements, readBounds } from '../page/frame-measurement';
 import { composedParent } from '../page/composed-dom';
+import { inventoryItemId } from '../progression/equipment-id';
 
 const PAGE_MUTATIONS: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true,
@@ -42,7 +44,12 @@ export class Game {
   private clearance?: TextClearance;
   private designs: SceneryDesign[] = [];
   private scenery: SceneryScene = { placements: [], protectedRects: [], ready: false };
+  private shopModal?: HTMLElement;
+  private shopOpen = false;
+  private shopPanel?: ShopPanel;
+  private gliderEquipped = false;
   private decorationRevision = -1;
+  private protectedRectsRevision = -1;
   private levelRevision = -1;
   private layoutPending = false;
   private viewportChanged = true;
@@ -105,6 +112,10 @@ export class Game {
     this.saved = undefined;
     this.resetLoot();
     this.decorationRevision = this.levelRevision = this.rootRevision = -1;
+    this.protectedRectsRevision = -1;
+    this.scenery.shopkeeper = undefined;
+    this.shopOpen = false;
+    this.gliderEquipped = false;
     this.changes.clear();
     this.styleChanges.clear();
     this.observedRoots.clear();
@@ -150,25 +161,45 @@ export class Game {
       section.dragging{will-change:transform}
       .panel-drag strong{font-size:11px;letter-spacing:.04em}
       .panel-toggle{flex:none;font-size:18px;line-height:1;padding:4px 7px}
+      .shop-modal{position:absolute;inset:0;z-index:3;pointer-events:auto}
+      .shop-backdrop{position:absolute;inset:0;background:#071016b8}
+      .shop-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));height:min(520px,calc(100vh - 40px));padding:28px;overflow-y:auto;border:3px solid #bc8c43;border-radius:10px;background:#1b2933;color:#f1e5ce;box-shadow:0 8px 36px #000a;font:16px/1.5 system-ui,sans-serif}
+      .shop-dialog h2{margin:0 0 10px;color:#f5cb7d}
+      .shop-close{position:absolute;right:12px;top:10px;width:auto;padding:4px 10px;font-size:22px;line-height:1}
+      .shop-offers{display:grid;gap:8px;margin:18px 0}.shop-offer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border:1px solid #596971;border-radius:5px;background:#15212b}.shop-offer span{min-width:0}.shop-sell h3{margin:18px 0 8px;color:#f5cb7d}.shop-message{color:#ffbeb1;min-height:1.5em}
       [hidden]{display:none!important}
     </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Steel and Steam platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Steel and Steam controls"><strong>STEEL &amp; STEAM</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
+    const shopModal = document.createElement('div');
+    shopModal.className = 'shop-modal';
+    shopModal.hidden = true;
+    shopModal.setAttribute('role', 'dialog');
+    shopModal.setAttribute('aria-modal', 'true');
+    shopModal.setAttribute('aria-labelledby', 'shop-title');
+    shopModal.innerHTML = '<div class="shop-backdrop"></div><section class="shop-dialog"><button class="shop-close" type="button" aria-label="Close shop">×</button><h2 id="shop-title">Merchant\'s train</h2><p>Welcome aboard. The shop is still being stocked.</p></section>';
+    shadow.append(shopModal);
     document.documentElement.append(host);
     this.host = host;
     this.canvas = shadow.querySelector('canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
     this.status = shadow.querySelector('.status')!;
     this.detail = shadow.querySelector('pre')!;
+    this.shopModal = shadow.querySelector('.shop-modal')!;
+    const shopDialog = this.shopModal.querySelector<HTMLElement>('.shop-dialog')!;
     shadow.querySelector('strong')!.append(` · ${chrome.runtime.getManifest().version}`);
     this.materialStatus = document.createElement('p');
     this.materialStatus.className = 'material-status';
     shadow.querySelector('nav')!.before(this.materialStatus);
     this.progressionPanel = mountProgressionUI(shadow.querySelector('section')!, {
-      equip: async itemId => {
-        const state = await requestProgression({ type: 'progress:equip', itemId });
+      equip: async (itemId, slot) => {
+        const state = await requestProgression({ type: 'progress:equip', itemId, slot });
         this.acceptProgress(state, run);
       },
     });
     this.progressionPanel.update(null, this.encounters);
+    this.shopPanel = mountShopUI(shopDialog, {
+      buy: async itemId => this.acceptProgress(await requestProgression({ type: 'progress:buy', itemId }), run),
+      sell: async itemId => this.acceptProgress(await requestProgression({ type: 'progress:sell', itemId }), run),
+    });
     const storageChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area === 'local' && changes[PLAYER_STORAGE_KEY]?.newValue) {
         this.acceptProgress(changes[PLAYER_STORAGE_KEY].newValue as PlayerState, run);
@@ -181,6 +212,8 @@ export class Game {
     this.surface = shadow.querySelector('.surface')!;
     const focus = () => this.surface!.focus({ preventScroll: true });
     mountMovablePanel(shadow.querySelector('section')!, signal, focus);
+    const controlHint = shadow.querySelector<HTMLElement>('section p:nth-of-type(2)');
+    if (controlHint) controlHint.innerHTML = 'Arrows / A D move · Space / W jump<br>Down / S drop · E talk to merchant · B debug · Esc stop';
     shadow.querySelector('.focus')!.addEventListener('click', focus, { signal });
     const locate = document.createElement('button');
     locate.type = 'button';
@@ -194,9 +227,14 @@ export class Game {
     shadow.querySelector('.debug')!.addEventListener('click', () => { this.toggleDebug(); focus(); }, { signal });
     shadow.querySelector('.respawn')!.addEventListener('click', () => { this.respawn(); focus(); }, { signal });
     shadow.querySelector('.stop')!.addEventListener('click', () => this.stop(), { signal });
+    shadow.querySelector('.shop-close')!.addEventListener('click', () => this.closeShop(), { signal });
     // Input uses the shadow host as document.activeElement while the game surface is focused.
     this.input = new Input(host, () => this.stop(), () => this.toggleDebug());
-    document.addEventListener('keydown', e => { if (e.code === 'Escape') this.stop(); }, { signal });
+    document.addEventListener('keydown', e => {
+      if (e.code !== 'Escape') return;
+      if (this.shopOpen) { e.preventDefault(); this.closeShop(); }
+      else this.stop();
+    }, { signal });
     window.addEventListener('resize', this.layoutChanged, { signal });
     window.addEventListener('scroll', this.scrolled, { signal, passive: true, capture: true });
     window.addEventListener('load', this.contentLoaded, { signal, capture: true });
@@ -233,6 +271,7 @@ export class Game {
     this.debug = !this.debug;
     this.host?.shadowRoot?.querySelector('.debug')?.setAttribute('aria-pressed', String(this.debug));
     if (this.detail) this.detail.hidden = !this.debug;
+    this.progressionPanel?.setDebug(this.debug);
   }
 
   private scrolled = (event: Event): void => {
@@ -424,13 +463,30 @@ export class Game {
   private refreshScenery(): void {
     if (!this.level || !this.host || !this.clearance) return;
     this.measureSceneryHud();
-    this.scenery.protectedRects = this.clearance.rectangles;
+    const clearanceSettled = !this.clearance.inspecting;
+    // Keep the last settled protection snapshot while hover/animation work is
+    // publishing conservative pending masks. This prevents rails flashing off.
+    if (clearanceSettled && this.protectedRectsRevision !== this.clearance.rectanglesRevision) {
+      this.scenery.protectedRects = this.clearance.rectangles.slice();
+      this.protectedRectsRevision = this.clearance.rectanglesRevision;
+    }
+    // `complete` means this frame produced a usable snapshot, even if a larger
+    // background inspection is still queued. This lets initial rails appear
+    // promptly instead of waiting for the whole document walk.
     this.scenery.ready = this.clearance.complete;
+    // Add newly discovered placements incrementally. Existing placements keep
+    // their stable design while geometry continues to inspect the page.
     if (this.decorationRevision !== this.geometry!.registryRevision) {
       this.scenery.placements = placeScenery(this.designs, this.geometry!.registryPlatforms, this.scenery.placements);
       this.decorationRevision = this.geometry!.registryRevision;
     }
+    this.configureShopkeeperPlacement();
     updateScenery(this.scenery.placements, this.geometry!.registryPlatforms, this.scenery.protectedRects, this.scenery.reserved);
+    if (!this.scenery.shopkeeper) this.chooseShopkeeper();
+    if (this.scenery.shopkeeper) {
+      this.configureShopkeeperPlacement();
+      updateScenery(this.scenery.placements, this.geometry!.registryPlatforms, this.scenery.protectedRects, this.scenery.reserved);
+    }
     if (this.pickupRevision !== this.geometry!.registryRevision) this.refreshPickups(false);
     else updatePickups(this.pickups, this.rewardPlatforms);
     this.pickupIndex.update(this.pickups);
@@ -441,6 +497,59 @@ export class Game {
     this.pickupIndex.query(this.viewportBounds, this.visiblePickups);
   }
 
+  private configureShopkeeperPlacement(): void {
+    const shopkeeper = this.scenery.shopkeeper;
+    if (!shopkeeper) return;
+    const placement = this.scenery.placements.find(item => item.platformId === shopkeeper.placementId);
+    if (!placement) return;
+    const rail = this.designs.find(design => design.kind === 'rail');
+    if (rail) placement.design = rail;
+    placement.width = Math.max(placement.width, 32);
+    placement.height = placement.design.height;
+    const platform = this.geometry?.registryPlatforms.find(item => item.id === placement.platformId);
+    if (platform) placement.y = platform.y - placement.height / 2;
+  }
+
+  private chooseShopkeeper(): void {
+    const firstThreeViewports = scrollY + innerHeight * 3;
+    const candidates = this.scenery.placements
+      .filter(placement => placement.visible
+        && placement.y + placement.height >= scrollY
+        && placement.y <= firstThreeViewports)
+      .sort((a, b) => a.platformId.localeCompare(b.platformId));
+    if (!candidates.length) return;
+    let seed = 2166136261;
+    for (const character of location.href) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619);
+    const placement = candidates[(seed >>> 0) % candidates.length]!;
+    this.scenery.shopkeeper = { placementId: placement.platformId };
+    this.configureShopkeeperPlacement();
+  }
+
+  private nearShopkeeper(): boolean {
+    const shopkeeper = this.scenery.shopkeeper;
+    const player = this.player;
+    if (!shopkeeper || !player) return false;
+    const placement = this.scenery.placements.find(item => item.platformId === shopkeeper.placementId);
+    if (!placement?.visible) return false;
+    const platformY = placement.y + placement.height / 2;
+    return Math.abs(player.x + player.width / 2 - (placement.x + 8)) <= 42
+      && Math.abs(player.y + player.height - platformY) <= 42;
+  }
+
+  private openShop(): void {
+    if (!this.shopModal) return;
+    this.shopOpen = true;
+    this.shopModal.hidden = false;
+    this.shopModal.querySelector<HTMLButtonElement>('.shop-close')?.focus({ preventScroll: true });
+  }
+
+  private closeShop(): void {
+    if (!this.shopModal) return;
+    this.shopOpen = false;
+    this.shopModal.hidden = true;
+    this.surface?.focus({ preventScroll: true });
+  }
+
   private acceptProgress(state: PlayerState, run: number): void {
     if (!this.active || run !== this.run || this.saved && state.revision < this.saved.revision) return;
     if (state.version !== 2 || !Array.isArray(state.inventory) || !Array.isArray(state.collectedCoins)) {
@@ -449,12 +558,14 @@ export class Game {
     }
     this.saved = state;
     this.collected = new Set(state.collectedCoins);
-    for (const item of state.inventory) this.pendingEquipment.delete(item.id);
-    this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(item => item.id), ...this.pendingEquipment]);
-    this.jumpMultiplier = state.inventory.find(item => item.id === state.equippedItemId)?.jumpMultiplier ?? 1;
+    for (const item of state.inventory) this.pendingEquipment.delete(inventoryItemId(item));
+    this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(inventoryItemId), ...this.pendingEquipment]);
+    this.jumpMultiplier = state.inventory.find(item => inventoryItemId(item) === state.equippedItems.boots)?.jumpMultiplier ?? 1;
+    this.gliderEquipped = state.inventory.some(item => inventoryItemId(item) === state.equippedItems.glider && item.ability === 'glide');
     this.progressError = '';
     this.refreshPickups();
     this.progressionPanel?.update(state, this.encounters);
+    this.shopPanel?.update(state);
     this.progressPanelDirty = false;
   }
 
@@ -462,6 +573,7 @@ export class Game {
     if (!this.active || run !== this.run) return;
     this.progressError = error instanceof Error ? error.message : String(error);
     this.progressionPanel?.update(this.saved ?? null, this.encounters, this.progressError);
+    this.shopPanel?.update(this.saved ?? null, this.progressError);
   }
 
   private resetLoot(): void {
@@ -533,11 +645,11 @@ export class Game {
         const index = this.pickups.indexOf(pickup);
         if (index >= 0) this.pickups.splice(index, 1);
         const ownership: EquipmentOwnership = { encounterId: pickup.encounterId, equipment: pickup.equipment };
-        void chrome.storage.local.set({ [EQUIPMENT_STORAGE_PREFIX + pickup.id]: ownership })
+        void chrome.storage.local.set({ [EQUIPMENT_STORAGE_PREFIX + pickup.encounterId]: ownership })
           .catch(error => {
             if (!this.active || run !== this.run) return;
             this.pendingEquipment.delete(pickup.id);
-            if (!this.saved?.inventory.some(item => item.id === pickup.id)) this.claimedEquipment.delete(pickup.id);
+            if (!this.saved?.inventory.some(item => inventoryItemId(item) === pickup.id)) this.claimedEquipment.delete(pickup.id);
             this.refreshPickups();
             this.showProgressError(error, run);
           })
@@ -561,6 +673,7 @@ export class Game {
       if (identityChanged) {
         this.designs = sceneryDesigns(location.href);
         this.scenery.placements.length = 0;
+        this.scenery.shopkeeper = undefined;
         this.resetLoot();
         this.decorationRevision = -1;
         this.refreshPickups();
@@ -581,6 +694,10 @@ export class Game {
     const elapsed = this.last ? Math.min((now - this.last) / 1000, 0.1) : 0;
     this.last = now;
     const input = this.input!, player = this.player!, level = this.level!;
+    if (input.interact) {
+      input.interact = false;
+      if (this.nearShopkeeper()) this.openShop();
+    }
     const previousY = player.y;
     if (input.focused && !this.stranded && !this.waitingForSpawn) {
       if (input.jump) this.jumpBuffer = 0.13;
@@ -602,7 +719,8 @@ export class Game {
           player.grounded = false;
           this.coyote = this.jumpBuffer = 0;
         }
-        stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps);
+        const gliding = this.gliderEquipped && input.jumpHeld && !player.grounded && player.vy >= 0;
+        stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps, gliding);
         this.accumulator -= dt;
         this.collectPickups();
         this.rememberStanding();
@@ -630,7 +748,8 @@ export class Game {
       }
       this.geometry!.commitMotion();
     }
-    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.visiblePickups, this.collected, this.jumpMultiplier > 1);
+    const gliding = this.gliderEquipped && input.jumpHeld && !player.grounded && player.vy >= 0;
+    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.visiblePickups, this.collected, this.jumpMultiplier > 1, gliding);
     drawPlayerLocator(this.ctx!, player, now - this.locatorStarted);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
@@ -664,6 +783,8 @@ export class Game {
     this.run++;
     this.progressionPanel?.dispose();
     this.progressionPanel = undefined;
+    this.shopPanel?.dispose();
+    this.shopPanel = undefined;
     this.resetLoot();
     this.saved = undefined;
     this.pendingEquipment.clear();
@@ -682,8 +803,10 @@ export class Game {
     this.clearance?.clear();
     this.clearance = undefined;
     this.scenery.placements.length = 0;
+    this.scenery.shopkeeper = undefined;
     this.scenery.protectedRects = [];
     this.scenery.ready = false;
+    this.closeShop();
     this.designs = [];
     this.host?.remove();
     this.player = undefined;

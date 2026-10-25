@@ -29,9 +29,14 @@ export interface SceneryPlacement {
   visible: boolean;
 }
 
+export interface Shopkeeper {
+  placementId: string;
+}
+
 export interface SceneryScene {
   placements: SceneryPlacement[];
   protectedRects: readonly Rect[];
   reserved?: Rect;
+  shopkeeper?: Shopkeeper;
   ready: boolean;
 }

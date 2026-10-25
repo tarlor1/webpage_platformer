@@ -1,10 +1,10 @@
 import { pageSeedKey } from '../page/page-identity';
+import { worldBoot } from './boots';
 import type { PageEncounter } from './progression-types';
 import type { Platform } from '../engine/types';
+import { surfaceMetadata } from '../page/surface-metadata';
 
 const VERSION = 3;
-const BOOT_NAMES = ['Springheel Boots', 'Skybound Boots', 'Piston Boots', 'Cloudstep Boots', 'Coppercoil Boots', 'Vaulting Boots'] as const;
-const BOOT_COLORS = ['#ad874e', '#8bb6ca', '#b9b3ff', '#7fe4d7', '#cf8d67', '#d5a653'] as const;
 
 function seededRandom(key: string): () => number {
   let state = 2166136261;
@@ -35,16 +35,8 @@ const ENCOUNTER_TYPES: readonly EncounterType[] = [
     rewards: next => ({ coinCount: 3 + next() % 5, equipment: null }),
   },
   {
-    id: 'equipment:boots', oneIn: 100,
-    rewards: (next, id) => {
-      const name = BOOT_NAMES[next() % BOOT_NAMES.length]!;
-      const jumpMultiplier = (115 + next() % 11) / 100;
-      const color = BOOT_COLORS[next() % BOOT_COLORS.length]!;
-      return { coinCount: 0, equipment: {
-        id: `${id}:equipment:boots`, name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
-        description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Find these boots on their webpage platform and pick them up; coins are not required.`,
-      } };
-    },
+    id: 'equipment:boots', oneIn: 400,
+    rewards: next => ({ coinCount: 0, equipment: worldBoot(next() % 100) }),
   },
 ];
 
@@ -81,6 +73,9 @@ function startedEncounter(encounter: PageEncounter, collected?: ReadonlySet<stri
 
 /** Geometry gates eligibility, never the identity, reward count, or gear roll. */
 export function eligibleLootPlatform(platform: Platform): boolean {
+  const source = surfaceMetadata(platform)?.element;
+  // Video interiors remain walkable, but never receive generated loot.
+  if (source && (source.tagName.toUpperCase() === 'VIDEO' || source.querySelector('video'))) return false;
   return validLogicalKey(platform.logicalKey) && Number.isFinite(platform.x)
     && Number.isFinite(platform.y) && Number.isFinite(platform.width) && platform.width >= 6;
 }

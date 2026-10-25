@@ -1,8 +1,8 @@
-import { collectCoin, collectEquipment, equipItem, readPlayerState } from '../progression/player-state';
+import { buyItem, collectCoin, collectEquipment, equipItem, readPlayerState, sellItem } from '../progression/player-state';
 import { validLogicalKey } from '../progression/encounters';
 import {
   EQUIPMENT_STORAGE_PREFIX, LEGACY_PLAYER_STORAGE_KEY, PLAYER_STORAGE_KEY,
-  type PlayerState, type ProgressionResponse,
+  type Equipment, type PlayerState, type ProgressionResponse,
 } from '../progression/progression-types';
 
 // Aggregate reads and commits share one queue across messages and ownership events.
@@ -45,7 +45,7 @@ function progressionMessage(value: unknown): value is Record<string, unknown> {
 }
 
 async function handleRequest(request: Record<string, unknown>): Promise<ProgressionResponse> {
-  if (request.type !== 'progress:get' && request.type !== 'progress:collect' && request.type !== 'progress:equip') {
+  if (!['progress:get', 'progress:collect', 'progress:equip', 'progress:buy', 'progress:sell'].includes(request.type as string)) {
     throw new Error('Unknown progression request.');
   }
   if (request.type === 'progress:collect' && (typeof request.url !== 'string' || request.url.length > 65536
@@ -55,14 +55,37 @@ async function handleRequest(request: Record<string, unknown>): Promise<Progress
   if (request.type === 'progress:equip' && request.itemId !== null && typeof request.itemId !== 'string') {
     throw new Error('Equipping requires an owned item ID or null.');
   }
+  if (request.type === 'progress:equip' && request.slot !== undefined && request.slot !== 'boots' && request.slot !== 'glider') {
+    throw new Error('Invalid equipment slot.');
+  }
+  if ((request.type === 'progress:buy' || request.type === 'progress:sell')
+    && (typeof request.itemId !== 'string' || !request.itemId || request.itemId.length > 131072)) {
+    
+    throw new Error('Shop actions require a valid item ID: ' + request.itemId);
+  }
 
   const loaded = await loadCurrentState();
   const current = loaded.state;
-  const transition = request.type === 'progress:collect'
-    ? collectCoin(current, request.url as string, request.logicalKey as string, request.index as number)
-    : request.type === 'progress:equip'
-      ? equipItem(current, request.itemId as string | null)
-      : { state: current, duplicate: false, reward: null };
+  let transition: ReturnType<typeof collectCoin>;
+  switch (request.type) {
+    case 'progress:get':
+      transition = { state: current, duplicate: false, reward: null };
+      break;
+    case 'progress:collect':
+      transition = collectCoin(current, request.url as string, request.logicalKey as string, request.index as number);
+      break;
+    case 'progress:equip':
+      transition = equipItem(current, request.itemId as string | null, request.slot as Equipment['slot'] | undefined);
+      break;
+    case 'progress:buy':
+      transition = buyItem(current, request.itemId as string);
+      break;
+    case 'progress:sell':
+      transition = sellItem(current, request.itemId as string);
+      break;
+    default:
+      throw new Error('Unknown progression request.');
+  }
   await commitState(loaded, transition.state);
   return request.type === 'progress:get'
     ? { ok: true, state: transition.state }

@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PickupIndex, planPickups, updatePickups } from '../src/progression/collectibles';
-import { encounterForPlatform } from '../src/progression/encounters';
+import { eligibleLootPlatform, encounterForPlatform } from '../src/progression/encounters';
 import { collectCoin, collectEquipment, createPlayerState } from '../src/progression/player-state';
 import { createPlayer, stepBody } from '../src/engine/physics';
 import { MOTION, type Platform } from '../src/engine/types';
 import type { CoinPickup, EquipmentPickup, PagePickup } from '../src/progression/progression-types';
+import { setSurfaceMetadata } from '../src/page/surface-metadata';
+import { worldEquipmentId } from '../src/progression/equipment-id';
 
 const URL = 'https://example.com/native-surfaces';
 
@@ -28,6 +30,24 @@ function equipmentEncounter(prefix: string, withCoins = false) {
   }
   throw new Error('Expected a deterministic equipment platform.');
 }
+
+test('video sources never receive coins or equipment', () => {
+  const encounter = equipmentEncounter('video-both', true);
+  const video = { tagName: 'VIDEO', querySelector: () => null } as unknown as Element;
+  const videoPlatform: Platform = { id: 'video', logicalKey: encounter.logicalKey, x: 0, y: 500, width: 640 };
+  const eligiblePickups = planPickups([encounter], [videoPlatform]);
+  assert.equal(eligiblePickups.filter(pickup => pickup.kind === 'coin').length, encounter.coinCount);
+  assert.equal(eligiblePickups.filter(pickup => pickup.kind === 'equipment').length, 1);
+  setSurfaceMetadata(videoPlatform, video, false);
+  assert.equal(eligibleLootPlatform(videoPlatform), false);
+  assert.deepEqual(planPickups([encounter], [videoPlatform]), []);
+
+  const wrapper = { tagName: 'DIV', querySelector: (selector: string) => selector === 'video' ? video : null } as unknown as Element;
+  const wrappedPlatform: Platform = { ...videoPlatform, id: 'video-wrapper' };
+  setSurfaceMetadata(wrappedPlatform, wrapper, false);
+  assert.equal(eligibleLootPlatform(wrappedPlatform), false);
+  assert.deepEqual(planPickups([encounter], [wrappedPlatform]), []);
+});
 
 function coinAt(id: string, x: number, y: number): CoinPickup {
   return {
@@ -299,7 +319,7 @@ test('equipment-only encounters materialize one ground-level pickup and no coins
   const initial = planPickups([encounter, encounter], [platform]);
   const gear = initial.filter(pickup => pickup.kind === 'equipment');
   assert.equal(gear.length, 1);
-  assert.equal(gear[0]!.id, encounter.equipment.id);
+  assert.equal(gear[0]!.id, worldEquipmentId(encounter.id));
   assert.equal(gear[0]!.platformId, platform.id);
   assert.ok(gear[0]!.y >= platform.y - MOTION.height && gear[0]!.y < platform.y);
   assert.equal(encounter.coinCount, 0);
@@ -318,7 +338,7 @@ test('a naturally both-winning platform materializes independently claimable coi
   assert.ok(encounter.coinCount > 0);
   assert.equal(coins.length, encounter.coinCount);
   assert.equal(initial.length, encounter.coinCount + 1);
-  assert.equal(equipment.id, encounter.equipment.id);
+  assert.equal(equipment.id, worldEquipmentId(encounter.id));
   assert.deepEqual(equipment.equipment, encounter.equipment);
   const ownership = { encounterId: equipment.encounterId, equipment: equipment.equipment };
   for (const equipmentFirst of [true, false]) {
@@ -355,9 +375,26 @@ test('a naturally both-winning platform materializes independently claimable coi
     }
     assert.deepEqual(pickups, []);
     assert.equal(state.coins, encounter.coinCount);
-    assert.deepEqual(state.inventory, [encounter.equipment]);
+    assert.equal(state.xp, encounter.coinCount * 20);
+    assert.deepEqual(state.inventory, [{ ...encounter.equipment, instanceId: worldEquipmentId(encounter.id) }]);
     assert.equal(collectEquipment(state, ownership).state, state);
     for (const coin of coins) assert.equal(collectCoin(state, URL, coin.logicalKey, coin.index).state, state);
     assert.deepEqual(materialize(), []);
   }
+});
+
+test('identical boots from different floor drops remain separate pickups even if already owned', () => {
+  const encounter = equipmentEncounter('duplicate-gear');
+  const other = { ...encounter, id: 'encounter-v3:second-drop', logicalKey: 'second-drop' };
+  const platforms: Platform[] = [encounter, other].map((source, i) => ({
+    id: `floor:${i}`, logicalKey: source.logicalKey, x: i * 300, y: 500, width: 200,
+  }));
+  const planned = planPickups([encounter, other], platforms, [], undefined, new Set([encounter.equipment.id]));
+  const gear = planned.filter(pickup => pickup.kind === 'equipment');
+  assert.equal(gear.length, 2);
+  assert.notEqual(gear[0]!.id, gear[1]!.id);
+  assert.equal(gear[0]!.equipment.id, gear[1]!.equipment.id);
+  const remaining = planPickups([encounter, other], platforms, planned, undefined, new Set([encounter.id]));
+  assert.deepEqual(remaining.filter(pickup => pickup.kind === 'equipment').map(pickup => pickup.id),
+    [worldEquipmentId(other.id)]);
 });
