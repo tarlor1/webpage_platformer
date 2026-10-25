@@ -71,12 +71,20 @@ function textureFor(ctx: CanvasRenderingContext2D, design: SceneryDesign): HTMLC
   return canvas;
 }
 
-/** Thin surface markings only; the renderer clips away all protected content. */
+/** Tile the original artwork at native scale; eligibility already guarantees a clean strip. */
 export function drawScenery(ctx: CanvasRenderingContext2D, placements: readonly SceneryPlacement[]): void {
   for (const placement of placements) {
     if (!placement.visible) continue;
     const { design, x, y, width, height } = placement;
     if (width <= 0 || height <= 0) continue;
-    ctx.drawImage(textureFor(ctx, design), 0, 0, width, height, x, y, width, height);
+    const texture = textureFor(ctx, design);
+    const sx = typeof scrollX === 'number' ? scrollX : x;
+    const right = typeof innerWidth === 'number' ? sx + innerWidth : x + width;
+    const first = Math.max(0, Math.floor((sx - x) / design.width));
+    const end = Math.min(width, right - x);
+    for (let offset = first * design.width; offset < end; offset += design.width) {
+      const tileWidth = Math.min(design.width, width - offset);
+      ctx.drawImage(texture, 0, 0, tileWidth, height, x + offset, y, tileWidth, height);
+    }
   }
 }

@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_ACTIVE_PICKUPS, planPickups, selectActivePickups, updatePickups } from '../src/progression/collectibles';
+import { PickupIndex, planPickups, updatePickups } from '../src/progression/collectibles';
 import { encounterForPlatform } from '../src/progression/encounters';
 import { createPlayer, stepBody } from '../src/engine/physics';
 import { MOTION, type Platform } from '../src/engine/types';
+import type { CoinPickup, EquipmentPickup, PagePickup } from '../src/progression/progression-types';
 
 const URL = 'https://example.com/native-surfaces';
 
@@ -13,6 +14,13 @@ function sevenCoinKey(): string {
     if (encounterForPlatform(URL, key).coinCount === 7) return key;
   }
   throw new Error('Expected a seven-coin platform seed.');
+}
+
+function coinAt(id: string, x: number, y: number): CoinPickup {
+  return {
+    kind: 'coin', id, index: 0, logicalKey: id, platformId: id,
+    fraction: 0.5, lift: 18, x, y, available: true,
+  };
 }
 
 /** Witness every pickup using real base-jump integration from its own assigned native surface. */
@@ -74,6 +82,21 @@ test('clones and wrapped segments share one claim set with deterministic represe
   assert.equal(pickups.filter(pickup => pickup.kind === 'coin').length, encounters[0]!.coinCount);
   assert.deepEqual(planPickups(encounters, [...platforms].reverse()), pickups);
   const ids = pickups.map(pickup => pickup.id);
+  const anchors = pickups.map(pickup => [pickup.id, pickup.platformId, pickup.x, pickup.y]);
+  const index = new PickupIndex();
+  const output: PagePickup[] = [];
+  index.update(pickups);
+  const selected = platforms.find(platform => platform.id === pickups[0]!.platformId)!;
+  const anchorView = { x: selected.x, y: 0, width: selected.width, height: 300 };
+  index.query(anchorView, output);
+  assert.deepEqual(new Set(output), new Set(pickups));
+  index.query({ x: 2000, y: 0, width: 100, height: 300 }, output);
+  assert.deepEqual(output, []);
+  updatePickups(pickups, [...platforms].reverse());
+  index.update(pickups);
+  index.query(anchorView, output);
+  assert.deepEqual(new Set(output), new Set(pickups));
+  assert.deepEqual(pickups.map(pickup => [pickup.id, pickup.platformId, pickup.x, pickup.y]), anchors);
   updatePickups(pickups, [platforms[1]!]);
   assert.deepEqual(pickups.map(pickup => pickup.id), ids);
   assert.ok(pickups.every(pickup => pickup.platformId === 'text-wrap'));
@@ -122,29 +145,138 @@ test('movement, resize, disappearance, and runtime replacement change anchors wi
   assert.deepEqual(pickups.map(pickup => pickup.id), original.map(pickup => pickup.id));
 });
 
-test('active coin work stays bounded and replenishes without rerolling rewards', () => {
-  const platforms: Platform[] = Array.from({ length: 200 }, (_, index) => ({
-    id: `surface:${index}`, logicalKey: `content:${index}`, x: index * 120, y: 500, width: 100,
+test('viewport queries return every visible reward without a character-dependent cap', () => {
+  const platforms: Platform[] = Array.from({ length: 24 }, (_, index) => ({
+    id: `surface:${index}`, logicalKey: `content:${index}`,
+    x: index % 6 * 140 + (index >= 12 ? 10000 : 0),
+    y: 180 + Math.floor(index % 12 / 6) * 160, width: 100,
   }));
   const encounters = platforms.map(platform => encounterForPlatform(URL, platform.logicalKey!));
   const pickups = planPickups(encounters, platforms);
-  const player = { x: 0, y: 470, platformId: platforms.at(-1)!.id };
-  const active = selectActivePickups(pickups, player);
-  assert.equal(active.length, MAX_ACTIVE_PICKUPS);
-  assert.equal(active.filter(pickup => pickup.kind === 'coin' && pickup.platformId === player.platformId).length,
-    encounters.at(-1)!.coinCount);
-  const originalIds = active.map(pickup => pickup.id);
-  assert.deepEqual(selectActivePickups([...pickups].reverse(), player).map(pickup => pickup.id), originalIds);
-  const claimed = new Set([active.find(pickup => pickup.kind === 'coin')!.id]);
-  const remaining = planPickups(encounters, platforms, pickups, claimed);
-  const replenished = selectActivePickups(remaining, player);
-  assert.equal(replenished.length, MAX_ACTIVE_PICKUPS);
-  assert.ok(replenished.every(pickup => !claimed.has(pickup.id)));
-  assert.ok(replenished.some(pickup => !originalIds.includes(pickup.id)));
-  const moved = selectActivePickups(remaining, { x: 5000, y: 470 });
-  assert.equal(moved.length, MAX_ACTIVE_PICKUPS);
-  assert.ok(moved.some(pickup => !replenished.some(previous => previous.id === pickup.id)));
-  assert.deepEqual(selectActivePickups(remaining, player).map(pickup => pickup.id), replenished.map(pickup => pickup.id));
+  const index = new PickupIndex();
+  const output: PagePickup[] = [];
+  index.update(pickups);
+  const viewport = { x: 0, y: 0, width: 900, height: 600 };
+  const visible = pickups.filter(pickup => pickup.x < 900);
+  const offscreen = pickups.filter(pickup => pickup.x > 10000);
+  assert.ok(visible.filter(pickup => pickup.kind === 'coin').length > 24);
+  index.query(viewport, output);
+  assert.deepEqual(new Set(output), new Set(visible));
+  const anchors = new Map(output.map(pickup => [pickup.id, [pickup.x, pickup.y]]));
+  index.query({ ...viewport, x: 10000 }, output);
+  assert.deepEqual(new Set(output), new Set(offscreen));
+  assert.ok(pickups.every(pickup => pickup.available));
+  // Neither a different query nor an unchanged frame rematerializes the rewards.
+  index.update(pickups);
+  index.query(viewport, output);
+  assert.deepEqual(new Set(output), new Set(visible));
+  assert.deepEqual(new Map(output.map(pickup => [pickup.id, [pickup.x, pickup.y]])), anchors);
+  index.query({ ...viewport, x: -10000 }, output);
+  assert.deepEqual(output, []);
+});
+
+test('spatial queries include touching sprite edges across positive and negative cell boundaries', () => {
+  const gear: EquipmentPickup = {
+    kind: 'equipment', id: 'gear', encounterId: 'gear-encounter', logicalKey: 'gear',
+    platformId: 'gear', fraction: 0.5, lift: 14, x: 245, y: 256, available: true,
+    equipment: {
+      id: 'gear', name: 'Boots', slot: 'boots', rarity: 'rare',
+      jumpMultiplier: 1.2, description: 'Jump boots',
+    },
+  };
+  const touching = [
+    coinAt('left', 248, 270), coinAt('right', 296, 270),
+    coinAt('top', 270, 248), coinAt('bottom', 270, 296),
+    coinAt('corner', 248, 248), gear,
+  ];
+  const outside = [
+    coinAt('past-left', 247.99, 270), coinAt('past-right', 296.01, 270),
+    coinAt('past-top', 270, 247.99), coinAt('past-bottom', 270, 296.01),
+    coinAt('coin-not-gear', 245, 256), { ...gear, id: 'past-gear', x: 244.99 },
+  ];
+  const negative = [coinAt('negative-left', -264, -256), coinAt('negative-right', -248, -256)];
+  const index = new PickupIndex();
+  const output: PagePickup[] = [];
+  index.update([...touching, ...outside, ...negative]);
+  index.query({ x: 256, y: 256, width: 32, height: 32 }, output);
+  assert.deepEqual(new Set(output), new Set(touching));
+  index.query({ x: -256, y: -256, width: 0, height: 0 }, output);
+  assert.deepEqual(new Set(output), new Set(negative));
+  index.query({ x: -300, y: -300, width: 1000, height: 1000 }, output);
+  assert.equal(output.length, touching.length + outside.length + negative.length);
+  assert.equal(new Set(output).size, output.length);
+});
+
+test('spatial memberships follow movement, availability, replacement, and removal', () => {
+  const pickup = coinAt('moving', 255, 255);
+  const index = new PickupIndex();
+  const output: PagePickup[] = [];
+  const oldLocation = { x: 240, y: 240, width: 20, height: 20 };
+  index.update([pickup]);
+  index.query(oldLocation, output);
+  assert.deepEqual(output, [pickup]);
+  pickup.x = 257;
+  pickup.y = 257;
+  index.update([pickup]);
+  index.query(oldLocation, output);
+  assert.deepEqual(output, [pickup]);
+  pickup.x = 310;
+  pickup.y = 310;
+  index.update([pickup]);
+  index.query(oldLocation, output);
+  assert.deepEqual(output, []);
+  index.query({ x: 310, y: 310, width: 1, height: 1 }, output);
+  assert.deepEqual(output, [pickup]);
+  pickup.x = -300;
+  pickup.y = -300;
+  index.update([pickup]);
+  index.query({ x: 310, y: 310, width: 1, height: 1 }, output);
+  assert.deepEqual(output, []);
+  const newLocation = { x: -300, y: -300, width: 1, height: 1 };
+  index.query(newLocation, output);
+  assert.deepEqual(output, [pickup]);
+  pickup.available = false;
+  index.query(newLocation, output);
+  assert.deepEqual(output, []);
+  index.update([pickup]);
+  index.query(newLocation, output);
+  assert.deepEqual(output, []);
+  const replacement = { ...pickup, available: true };
+  index.update([replacement]);
+  index.query(newLocation, output);
+  assert.deepEqual(output, [replacement]);
+  assert.equal(output[0], replacement);
+  index.update([]);
+  index.query(newLocation, output);
+  assert.deepEqual(output, []);
+});
+
+test('source retirement and collected rewards leave queries while surviving anchors stay stable', () => {
+  const platform: Platform = { id: 'original', logicalKey: 'retiring-content', x: 100, y: 400, width: 200 };
+  const encounter = encounterForPlatform(URL, platform.logicalKey!);
+  const pickups = planPickups([encounter], [platform]);
+  const anchors = pickups.map(pickup => [pickup.id, pickup.x, pickup.y]);
+  const index = new PickupIndex();
+  const output: PagePickup[] = [];
+  const viewport = { x: 0, y: 0, width: 1000, height: 600 };
+  index.update(pickups);
+  index.query(viewport, output);
+  assert.deepEqual(new Set(output), new Set(pickups));
+  updatePickups(pickups, []);
+  index.update(pickups);
+  index.query(viewport, output);
+  assert.equal(output.length, 0);
+  updatePickups(pickups, [{ ...platform, id: 'replacement' }]);
+  index.update(pickups);
+  index.query(viewport, output);
+  assert.deepEqual(new Set(output), new Set(pickups));
+  assert.deepEqual(pickups.map(pickup => [pickup.id, pickup.x, pickup.y]), anchors);
+  const collected = new Set([pickups.find(pickup => pickup.kind === 'coin')!.id]);
+  const remaining = planPickups([encounter], [platform], pickups, collected);
+  index.update(remaining);
+  index.query(viewport, output);
+  assert.deepEqual(new Set(output), new Set(remaining));
+  assert.ok(output.every(pickup => !collected.has(pickup.id)));
 });
 
 test('equipment is a separate ground-level pickup before any coin completion', () => {

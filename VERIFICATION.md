@@ -1,6 +1,67 @@
 # Verification record
 
-## Version 1.2.0: sparse pickups, stable terrain, and site coverage
+## Version 1.3.0: rendering, viewport pickups, and incremental discovery
+
+This section separates observed browser evidence from the later rendering and catch-up changes. Read-only browser agents exercised a frozen pre-final 1.3 build in owned disposable profiles using **Linux headless Chromium 155**. They used real keyboard events, native controls, DOM measurements, and visually inspected screenshots. Production activation and lifecycle checks used the actual unpacked extension; detailed motion and pickup measurements also used the Game diagnostic. The frozen observations below precede the final media-padding, clearance-epoch, discovery-priority, and population-cache refinements. They do not establish final post-fix rendering, catch-up latency, or performance.
+
+### Stable support, responsive layout, and native input
+
+| Frozen-build check | Observed result |
+| --- | --- |
+| Animated carrier, paused for 240 frames | Feet gap **0 CSS px**, support-local drift **0 CSS px**, and zero support losses while the character moved from x = 405.540 to 541.237 with its carrier. |
+| Focused rider, 180 frames | Feet gap and local drift remained **0**; no support losses, missing matching materials, or material x/width mismatches. |
+| Offscreen rider, scroll y = 1300, 180 frames | Support and local offset stayed unchanged, with feet gap **0**. Scrolling did not move the rider to visible terrain. |
+| Navbar crossing, scroll y = 400, 120 frames | No support changes or local drift. |
+| Real Space and Right keys | Space produced 44 airborne frames before landing on the carrier. Right produced 42 airborne frames during a 180-frame probe, followed by recovery; the next 180 frames had no airborne frames or support changes. |
+| Real Down key | The character was airborne for 39 frames and its feet reached y = 920.045, beyond the 900-pixel viewport. Recovery returned to the same carrier, with local offset 455.0000305 → 455 CSS px. |
+| Animated fixture at widths 1440/1024/768 | The cropped support retained its identity and local offset 163.126071 CSS px. |
+| Native Chrome zoom to 125% | CSS viewport dimensions changed from 1440×900 to 1152×720; support identity and local offset were retained. |
+| Wrapped layout at widths 1440/1024/768 | Support identity and local offset 139.171875 CSS px were retained as its width changed 229.453 → 229.453 → 146.734 and its top changed 487.609 → 487.609 → 513.203 CSS px. |
+
+The open-shadow media fixture grew from eight fragments in one root to ten fragments in two roots after movement, late root attachment, and insertion of a native control. Video widths followed the measured layout changes, including 400 → 370 and 500 → 440 → 460 CSS px. Production Start created one overlay; Focus, Right, and Escape removed it and returned focus to `BODY`. Toggling the extension again created one overlay without duplication and restarted paused.
+
+### Viewport pickups and full-width material observations
+
+On `fixtures/rendering-lab.html` at 1440×900, a parent browser probe registered 137 surfaces, 131 collision surfaces, and 72 world pickups. With the game paused, moving the character from x = 30 to x = 1250 left **all 50 visible pickups unchanged, including the exact ID set**, with camera (0, 0) and zero collected coins. This distinguishes viewport drawing from character-nearest selection.
+
+After the button-mask and small-edge changes, the same fixture showed **61 visible decorations**. The original wide button had a **1160 CSS-pixel rail**; nested geometry had only one 1160-pixel owner. A partly covered back edge had no material, while its front edge had a 754-pixel road. The 107-pixel grid controls also received full-width material. Inspected screenshots retained the original silver rails, brown sleepers, and roads, with readable native text.
+
+These are intermediate rendering observations. The frozen motion fixture measured correct native video/cropped-image collision widths of 300/320/400 CSS px, but some corresponding material was missing. That observation motivated the later own-media padding correction; it is not evidence that the corrected material was rendered. A separate initial 2,000-card discovery probe completed 12,137 registered surfaces in 166 frames (4.32 seconds), retained 50 visible pickups, and had no global material-blackout frames, but a known clean strip disappeared for two frames. The later clearance-epoch change addresses that observation; the initial probe does not verify the change.
+
+### Frozen-build live-site checks
+
+| Site and view | Actual observed coverage | Native interaction and limits |
+| --- | --- | --- |
+| Google homepage, 1440×900 and 768×900 | Ready state true, 21 surfaces, seven pickups, one visible pickup, and one material. | Production typing preserved `platformer compatibility smoke`, paused gameplay, and retained the text after Escape removed the overlay. Narrow diagnostic typing preserved `wasd platformer smoke` and left player x = 373, y = 506, vx = vy = 0 unchanged. No search was submitted. |
+| GitHub `https://github.com/oven-sh/bun`, 1440-wide top | 781 surfaces, 372 pickups, **68 visible pickups**: all 67 whose centers were inside the viewport, plus one edge pickup. Dense code at the top had no material. | The Code dropdown exposed the clone URL and Download ZIP; no download was started. At scroll y = 2700 there were 11 visible pickups and four materials. At width 768 and the same scroll position there were 567 surfaces, 266 pickups, six visible pickups, and no material. |
+| Wikipedia `https://en.wikipedia.org/wiki/Platform_game`, redirected to `/wiki/Platformer`, 1440-wide top | 3,082 surfaces, 810 pickups, **40 visible pickups** and three materials. All 40 pickup centers inside the viewport were included, with none missing. | The native main menu expanded. At scroll y = 2500 there were 20 visible pickups and two materials. At width 768 and that scroll position there were 3,125 surfaces, 804 pickups, 16 visible pickups, and one material. |
+
+Production activation and Escape worked on all three sites. GitHub README and Wikipedia top-view probes found no overlapping visible material pairs; inspected screenshots showed material above images and readable text. Coins can cross native text and control areas, so these checks do not establish pickup clearance. GitHub's inspection label persisted during a ready state, while the README still had four materials; the label alone did not indicate a global blackout.
+
+### Initial YouTube catch-up evidence
+
+The following measurements describe the **frozen pre-catch-up build**, not current post-fix results. On `https://www.youtube.com/watch?v=26P1KyvrmjI`, expanding the served description exposed 17 eligible prose/link lines. The actual prose had no role-button ancestor; only the native more/less controls did. Hidden expansion-sizing content had range rectangles but was correctly excluded by its hidden visibility.
+
+| Initial frozen probe | Observed discovery and selection |
+| --- | --- |
+| Description expansion, frame 1 / 61.2 ms | 0 of 17 lines registered or selected. |
+| Frame 2 / 115.9 ms | One line registered, none selected. |
+| Frame 30 / 795.6 ms | All 17 registered, none selected. |
+| Frame 64 / 1432.1 ms | All 17 registered and selected. A separate repeat still had 17 registered and none selected at frame 94 / 1987.7 ms. |
+| Eight fast 650-pixel scrolls, y = 358 → 3483, frame 60 / 2269 ms | Ten of 14 viewport images registered, four still uninspected, none selected. |
+| Frame 75 / 2611 ms and frame 150 / 4483 ms | All 14 images registered, six selected; selection still had not caught up at the latter sample. |
+
+The observed level had 56 surfaces, below its 220 selection capacity, so these missing selections were not explained by reaching that capacity. Eligible empty-alt 40×40 shopping images and 242×136 thumbnails eventually registered and were selected. These observations motivated viewport lookahead and prioritized partial publication. They do not verify the later implementation's catch-up time.
+
+### Access and verification limits
+
+McDonald's returned **HTTP 403 / Access Denied** in normal Chromium navigation and in the static reader. The browser relay was unavailable because it timed out. No accessible McDonald's DOM was available to inspect, and neither a live image fix nor post-fix McDonald's coverage is claimed.
+
+These are Linux headless Chromium 155 spot checks, not a cross-browser matrix, compositor benchmark, or FPS promise. Native DOM calls cannot be preempted by a JavaScript work-slice target. The narrow HUD occluded some lower-right page content, and the 768-wide fixture had horizontal overflow; whole-page unobstructed use is not claimed. Rotated and perspective geometry remains axis-aligned and approximate. Pseudo-element-painted images, closed shadow roots, and cross-origin iframe internals are outside the supported scan. Native controls and typing were usable in the exercised cases, without bypassing authentication, CAPTCHA, or access challenges.
+
+## Historical version 1.2.0: sparse pickups, stable terrain, and site coverage
+
+The following 1.2.0 record is historical. Its source-check totals, bundle sizes, 24-active-pickup cap, geometry policy, and live-site observations describe that release, not version 1.3 acceptance results.
 
 The final source passed `bun run test` (**98 tests across eight files**), `bun run typecheck`, and `bun run build`, including the request-free equipment-ownership change. The build produced approximately 59.1 kB of content code, a 7.2 kB MV3 worker, and a 1.2 kB popup. Browser observations used the actual unpacked extension in Linux Chromium 155.
 
@@ -271,4 +332,4 @@ Only Linux Chromium 155 was exercised. Chrome on other operating systems, older 
 
 Terrain follows axis-aligned DOM bounds and text-line rectangles. Rotation, arbitrary clipping, and visual occlusion are not comprehensively modeled; there is no claim that every covered or visually hidden surface is rejected. Animated GIF or video pixels do not create independently moving terrain when their DOM element's bounds stay fixed. Iframe and shadow-root contents are outside the terrain scan. The live-site results are spot checks, not guarantees for every page, SPA state, animation mechanism, or document size.
 
-The historical platforming-only checks above did not verify progression, inventory, or rewards. Version 1.1.0 subsequently verified its then-current progression path; version 1.2.0 observations and their limits are recorded at the top. Per-page coordinate persistence, combat, and multiplayer remain absent.
+The historical platforming-only checks above did not verify progression, inventory, or rewards. Version 1.1.0 subsequently verified its then-current progression path; the historical version 1.2.0 record and version 1.3 observations have their own sections above. Per-page coordinate persistence, combat, and multiplayer remain absent.

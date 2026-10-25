@@ -6,25 +6,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   const sx = scrollX, sy = scrollY;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   ctx.save(); ctx.translate(-sx, -sy);
-  if (scenery.ready) {
-    drawScenery(ctx, scenery.placements);
-    // Erase decoration pixels under protected content, including overlapping masks.
-    // This layer is painted before all game geometry/character drawing.
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#000';
-    for (const rect of scenery.protectedRects) ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-    if (scenery.reserved) {
-      const rect = scenery.reserved;
-      ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-    }
-    ctx.restore();
-  }
+  if (scenery.ready) drawScenery(ctx, scenery.placements);
   for (const pickup of pickups) {
-    if (!pickup.available || collected.has(pickup.id)
-      || pickup.x + 8 < sx || pickup.x - 8 > sx + innerWidth
-      || pickup.y + 8 < sy || pickup.y - 8 > sy + innerHeight) continue;
+    if (!pickup.available || collected.has(pickup.id)) continue;
     if (pickup.kind === 'equipment') {
       const x = pickup.x, y = pickup.y;
       ctx.fillStyle = '#24343d';
@@ -48,12 +32,16 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   }
   for (const p of level.platforms) {
     if (debug) {
-      const strip = scenery.ready ? scenery.placements.find(placement => placement.visible && placement.platformId === p.id) : undefined;
+      const strips = scenery.ready ? scenery.placements.filter(placement => placement.visible
+        && Math.abs(placement.y + placement.height / 2 - p.y) < placement.height / 2
+        && placement.x < p.x + p.width && placement.x + placement.width > p.x).sort((a, b) => a.x - b.x) : [];
       ctx.strokeStyle = p.moving ? '#e5b755' : '#17b8b0'; ctx.lineWidth = 2; ctx.beginPath();
-      if (strip) {
-        if (strip.x > p.x) { ctx.moveTo(p.x, p.y); ctx.lineTo(strip.x, p.y); }
-        if (strip.x + strip.width < p.x + p.width) { ctx.moveTo(strip.x + strip.width, p.y); ctx.lineTo(p.x + p.width, p.y); }
-      } else { ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.width, p.y); }
+      let start = p.x;
+      for (const strip of strips) {
+        if (strip.x > start) { ctx.moveTo(start, p.y); ctx.lineTo(strip.x, p.y); }
+        start = Math.max(start, strip.x + strip.width);
+      }
+      if (start < p.x + p.width) { ctx.moveTo(start, p.y); ctx.lineTo(p.x + p.width, p.y); }
       ctx.stroke();
     }
     if (debug) {
