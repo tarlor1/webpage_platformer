@@ -35,7 +35,7 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
   const jumpMultiplier = (115 + next() % 11) / 100;
   const color = BOOT_COLORS[next() % BOOT_COLORS.length]!;
   return {
-    id, seedKey, logicalKey, coinCount, coinValue: 5, xpPerCoin: 20,
+    id, seedKey, logicalKey, coinCount, coinValue: 1, xpPerCoin: 20,
     equipment: hasBoots ? {
       id: `${id}:equipment:boots`, name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
       description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Find these boots on their webpage platform and pick them up; coins are not required.`,

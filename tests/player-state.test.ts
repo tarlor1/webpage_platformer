@@ -35,13 +35,13 @@ test('new profiles use v2 and start without free currency or equipment', () => {
   assert.notEqual(createPlayerState().inventory, state.inventory);
 });
 
-test('one coin awards five currency and twenty XP without mutating its input', () => {
+test('one coin awards one currency and twenty XP without mutating its input', () => {
   const initial = createPlayerState();
   const before = structuredClone(initial);
   const result = collectCoin(initial, PAGE, rareKey, 0);
   assert.equal(result.duplicate, false);
   assert.equal(result.reward, null);
-  assert.equal(result.state.coins, 5);
+  assert.equal(result.state.coins, 1);
   assert.equal(result.state.xp, 20);
   assert.equal(result.state.level, 1);
   assert.equal(result.state.revision, 1);
@@ -60,7 +60,7 @@ test('completing even a rare platform coin set never unlocks its equipment', () 
     assert.deepEqual(state.claimedRewards, []);
   }
   assert.deepEqual(state.completedEncounters, [encounter.id]);
-  assert.equal(state.coins, encounter.coinCount * 5);
+  assert.equal(state.coins, encounter.coinCount);
   assert.equal(state.xp, encounter.coinCount * 20);
   assert.equal(collectCoin(state, PAGE, rareKey, 0).state, state);
 });
@@ -96,8 +96,8 @@ test('a new logical key and a new meaningful URL each permit distinct coin sets 
   const original = completePlatform(rareKey);
   const otherKey = collectCoin(original, PAGE, ordinaryKey, 0).state;
   const otherPath = collectCoin(otherKey, `${PAGE}/chapter`, rareKey, 0).state;
-  assert.equal(otherKey.coins, original.coins + 5);
-  assert.equal(otherPath.coins, original.coins + 10);
+  assert.equal(otherKey.coins, original.coins + 1);
+  assert.equal(otherPath.coins, original.coins + 2);
   assert.equal(new Set(otherPath.collectedCoins).size, otherPath.collectedCoins.length);
 });
 
@@ -108,7 +108,7 @@ test('ordinary platform completion creates no equipment and retains independent 
   assert.deepEqual(state.completedEncounters, [encounter.id]);
   assert.deepEqual(state.claimedRewards, []);
   assert.deepEqual(state.inventory, []);
-  assert.equal(state.coins, encounter.coinCount * 5);
+  assert.equal(state.coins, encounter.coinCount);
   assert.equal(state.level, 1 + Math.floor(state.xp / 100));
 });
 
@@ -117,7 +117,7 @@ test('levels advance every hundred XP without spending currency', () => {
   for (let count = 1; count <= 30; count++) {
     state = collectCoin(state, PAGE, `level:${count}`, 0).state;
     assert.equal(state.xp, count * 20);
-    assert.equal(state.coins, count * 5);
+    assert.equal(state.coins, count);
     assert.equal(state.level, 1 + Math.floor(count / 5));
     assert.equal(state.revision, count);
   }
@@ -161,7 +161,7 @@ test('v1 migration is idempotent and preserves exact legacy inventory, equipment
   assert.deepEqual(legacy, backup);
   assert.equal(readPlayerState(migrated), migrated);
   const claimed = collectCoin(migrated, PAGE, rareKey, 0).state;
-  assert.equal(claimed.coins, legacy.coins + 5);
+  assert.equal(claimed.coins, legacy.coins + 1);
   assert.equal(claimed.xp, legacy.xp + 20);
   assert.equal(claimed.equippedItemId, boots.id);
   assert.deepEqual(claimed.inventory, legacy.inventory);

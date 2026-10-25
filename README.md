@@ -49,7 +49,7 @@ Grounded characters remain attached to their current original platform when scro
 
 ## Coins, levels, and rare equipment
 
-Deterministic seeding populates about **10% of ordinary logical platforms**, plus every rare equipment platform, with **3–7 coins per populated surface**. Each coin gives **5 coins and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic.
+Deterministic seeding populates about **10% of ordinary logical platforms**, plus every rare equipment platform, with **3–7 coins per populated surface**. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic.
 
 Roughly **1% of logical platforms** carry rare, visible boots. Walk into them to own them, with no coin, completion, or level prerequisite. Completing a platform's coin set records encounter completion without awarding equipment. The URL and logical platform determine the coin count and equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
 

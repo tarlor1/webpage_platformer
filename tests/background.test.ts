@@ -100,7 +100,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(results.filter(result => result.ok && result.reward).length, 0);
     const final = await send({ type: 'progress:get' });
     if (!final.ok) throw new Error(final.error);
-    assert.equal(final.state.coins, legacy.coins + encounter.coinCount * 5);
+    assert.equal(final.state.coins, legacy.coins + encounter.coinCount);
     assert.equal(final.state.xp, legacy.xp + encounter.coinCount * 20);
     assert.equal(final.state.revision, legacy.revision + encounter.coinCount + 2);
     assert.deepEqual(final.state.inventory, [legacyBoots, startupEncounter.equipment, encounter.equipment]);
@@ -184,7 +184,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal((await send(retry)).ok, false);
     const recovered = await send(retry, 2);
     if (!recovered.ok) throw new Error(recovered.error);
-    assert.equal(recovered.state.coins, final.state.coins + 5);
+    assert.equal(recovered.state.coins, final.state.coins + 1);
     assert.deepEqual(recovered.state.inventory, recoveredOwnership.state.inventory);
     assert.equal(recovered.state.equippedItemId, startupEncounter.equipment.id);
     const retried = await send(retry);

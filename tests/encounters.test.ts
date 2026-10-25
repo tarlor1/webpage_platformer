@@ -14,7 +14,7 @@ test('platform rewards retain both canonical URL and complete logical identity',
   assert.equal(expected.logicalKey, KEY);
   assert.ok(expected.id.startsWith('encounter-v2:'));
   assert.ok(expected.coinCount >= 3 && expected.coinCount <= 7);
-  assert.equal(expected.coinValue, 5);
+  assert.equal(expected.coinValue, 1);
   assert.equal(expected.xpPerCoin, 20);
   for (const [url, key] of [[PAGE.replace('/search', '/Search'), KEY], [PAGE, `${KEY}:other`],
     [PAGE.replace('start=20', 'start=40'), KEY], [PAGE.replace('tbm=isch', 'tbm=vid'), KEY],
