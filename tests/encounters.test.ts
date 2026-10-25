@@ -12,10 +12,7 @@ test('platform rewards retain both canonical URL and complete logical identity',
   assert.deepEqual(encounterForPlatform('http://www.google.com/search?start=20&utm_source=mail&tbm=isch&q=steam%20engine#other', KEY), expected);
   assert.equal(expected.seedKey, pageSeedKey(PAGE));
   assert.equal(expected.logicalKey, KEY);
-  assert.ok(expected.id.startsWith('encounter-v2:'));
-  assert.ok(expected.coinCount >= 3 && expected.coinCount <= 7);
-  assert.equal(expected.coinValue, 5);
-  assert.equal(expected.xpPerCoin, 20);
+  assert.ok(expected.id.startsWith('encounter-v3:'));
   for (const [url, key] of [[PAGE.replace('/search', '/Search'), KEY], [PAGE, `${KEY}:other`],
     [PAGE.replace('start=20', 'start=40'), KEY], [PAGE.replace('tbm=isch', 'tbm=vid'), KEY],
     [PAGE.replace('steam+engine', 'brass+gears'), KEY]]) {
@@ -77,51 +74,60 @@ test('discovery merges new logical keys, deduplicates wraps/clones and ignores g
   assert.deepEqual(discoverEncounters(PAGE, [{ ...first, width: 2 }]), []);
 });
 
-test('3–7 coin sets and approximately one-percent equipment rolls vary by platform on the same URL', () => {
+
+test('independent encounters remain deterministic with sparse coins and rare equipment', () => {
   const counts = new Set<number>();
-  const ids = new Set<string>();
-  let gear = 0;
-  const appearances = new Set<string>();
-  for (let index = 0; index < 10000; index++) {
-    const encounter = encounterForPlatform(PAGE, `logical:${index}`);
-    assert.deepEqual(encounterForPlatform(PAGE, `logical:${index}`), encounter);
-    counts.add(encounter.coinCount);
-    for (let coin = 0; coin < encounter.coinCount; coin++) {
-      const id = coinId(encounter, coin);
-      assert.ok(!ids.has(id));
-      ids.add(id);
+  const coinIds = new Set<string>();
+  let coins = 0;
+  let equipment = 0;
+  let both = 0;
+  let empty = 0;
+  for (let index = 0; index < 50000; index++) {
+    const logicalKey = `independent:${index}`;
+    const encounter = encounterForPlatform(PAGE, logicalKey);
+    if (encounter.coinCount > 0) {
+      coins++;
+      assert.ok(encounter.id.startsWith('encounter-v3:'));
+      assert.ok(encounter.coinCount >= 3 && encounter.coinCount <= 7);
+      counts.add(encounter.coinCount);
+      for (let coin = 0; coin < encounter.coinCount; coin++) {
+        const claim = coinId(encounter, coin);
+        assert.equal(claim, `${encounter.id}:coin:${coin}`);
+        assert.ok(!coinIds.has(claim));
+        coinIds.add(claim);
+      }
     }
     if (encounter.equipment) {
-      gear++;
+      equipment++;
       assert.ok(encounter.equipment.jumpMultiplier >= 1.15 && encounter.equipment.jumpMultiplier <= 1.25);
-      assert.ok(encounter.equipment.id.startsWith(encounter.id));
-      appearances.add(`${encounter.equipment.name}:${encounter.equipment.color}:${encounter.equipment.jumpMultiplier}`);
+      assert.equal(encounter.equipment.id, `${encounter.id}:equipment:boots`);
     }
+    if (encounter.coinCount > 0 && encounter.equipment) both++;
+    if (encounter.coinCount === 0 && encounter.equipment === null) empty++;
+    if (index < 100) assert.deepEqual(encounterForPlatform(PAGE, logicalKey), encounter);
   }
   assert.deepEqual([...counts].sort(), [3, 4, 5, 6, 7]);
-  assert.ok(gear > 50 && gear < 160, `expected about 1% rare platforms, received ${gear}/10000`);
-  assert.ok(appearances.size > 10);
+  assert.ok(coins > 3500 && coins < 6500, `coin outcomes: ${coins}/50000`);
+  assert.ok(equipment > 300 && equipment < 700, `equipment outcomes: ${equipment}/50000`);
+  assert.ok(both > 0, 'some platforms independently win both coins and equipment');
+  assert.ok(coins > both, 'coin-only outcomes exist');
+  assert.ok(equipment > both, 'equipment-only outcomes exist');
+  assert.ok(empty > 40000);
 });
 
-test('population stays sparse while preserving rare platforms and started reward sets', () => {
-  let populated = 0;
+test('discovery excludes empty encounters even when supplied nonexistent coin claims', () => {
   let empty;
   for (let index = 0; index < 10000; index++) {
-    const encounter = encounterForPlatform(PAGE, `population:${index}`);
-    const selected = populatedEncounter(encounter);
-    if (selected) populated++;
-    else empty ??= encounter;
-    if (encounter.equipment) assert.equal(selected, true);
+    const encounter = encounterForPlatform(PAGE, `empty:${index}`);
+    if (encounter.coinCount === 0 && encounter.equipment === null) { empty = encounter; break; }
   }
-  assert.ok(populated >= 500 && populated < 2000, `sparse platform population: ${populated}/10000`);
   assert.ok(empty);
-  const platform: Platform = { id: 'started', logicalKey: empty.logicalKey, x: 0, y: 500, width: 100 };
-  assert.deepEqual(discoverEncounters(PAGE, [platform]), []);
+  const platform: Platform = { id: 'empty', logicalKey: empty.logicalKey, x: 0, y: 500, width: 100 };
   const claimed = new Set([coinId(empty, 0)]);
-  assert.deepEqual(discoverEncounters(PAGE, [platform], [], claimed), [empty]);
-  assert.deepEqual(discoverEncounters(PAGE, [platform], [empty]), []);
-  assert.deepEqual(discoverEncounters(PAGE, [platform], [empty], claimed), [empty]);
+  assert.deepEqual(discoverEncounters(PAGE, [platform]), []);
+  assert.deepEqual(discoverEncounters(PAGE, [platform], [empty], claimed), []);
 });
+
 
 test('social-site content queries change identity while share and challenge parameters do not', () => {
   for (const [host, parameter] of [['www.reddit.com', 'sort'], ['www.tiktok.com', 'q'], ['www.instagram.com', 'img_index']]) {

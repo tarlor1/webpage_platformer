@@ -133,6 +133,8 @@ export function collectEquipment(state: PlayerState, value: unknown): PlayerTran
       revision: increment(state.revision, 1),
       inventory: [...state.inventory, item],
       claimedRewards: [...state.claimedRewards, record.encounterId],
+      completedEncounters: state.completedEncounters.includes(record.encounterId)
+        ? state.completedEncounters : [...state.completedEncounters, record.encounterId],
     },
     duplicate: false,
     reward: item,

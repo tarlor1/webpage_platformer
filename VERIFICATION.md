@@ -1,5 +1,23 @@
 # Verification record
 
+## Current generation-v3 encounter policy
+
+Every encounter type rolls independently for each logical platform. Coins have a 10% (1-in-10) chance and boots have a 1% (1-in-100) chance. Every successful type spawns: a platform can contain 3–7 coins, one pair of boots, both, or neither. Types do not rank or compete, and neither forces or suppresses the other. Each type retains its existing deterministic roll seed domain and separate reward seed domain.
+
+The version-2 save format and existing `encounter-v3:` reward IDs remain unchanged. This correction does not bump the generation or reset progress; existing inventory, equipment attributes, and completion/claim history remain preserved. The progression fixture retains its lower authored identity, `foundry-workshop-3055`, for the default `http://127.0.0.1:8080/fixtures/progression.html` URL. Its seed retains Piston Boots with a 1.2× jump multiplier and zero coins on the lower platform.
+
+`bun run typecheck`, 164 tests across 12 files, and `bun run build` passed. Regression coverage includes naturally both-winning seeds, pickup materialization, both collection orders, worker duplicate prevention, and preserved reward IDs. The previously suppressed seed `collision-smoke:3129` at `https://www.lazyvim.org/keymaps` now generates seven coins and Cloudstep Boots with the same encounter ID.
+
+Browser smoke used the actual Game class with a diagnostic handle in an unpacked-extension isolated world and the built service worker, in Linux headless Chromium at 1440×900 CSS pixels. On the progression fixture, the lower original button's authored identity was temporarily changed to `both-workshop:190` before activation; the actual generator and DOM measurement produced five coins and Skybound Boots on that same platform. Real movement and drop keys collected the boots first at zero coins; all five coins remained available and the HUD still showed 0/1 platforms complete. Native movement and jumps then collected all five coins: balance 25, XP 100, one inventory item, HUD 1/1 complete. Initial simultaneous-spawn and final completion screenshots were visually inspected. No fabricated pickups or character-position overrides were used. Browser restart and the full live-site matrix were not repeated. The following exclusive-selection checks are historical evidence, not current acceptance evidence.
+
+## Historical generation-v3 exclusive-selection verification
+
+The previous implementation selected at most one successful type using an independently seeded rank and a lexical type-ID tie-break. Its exclusive outcomes and collision winner counts below are superseded by the current independent-spawn policy.
+
+Integrated checks passed: `bun run typecheck`, 162 tests across 12 files, and `bun run build`. A throwaway diagnostic exported the actual catalog without changing repository source: reversing its order for 50,000 platform identities produced identical encounters and zero combined coin/equipment outcomes. Of 48 cases where both candidates qualified, coins won 20 and equipment won 28.
+
+Browser smoke used the actual Game class with a diagnostic handle in an unpacked-extension isolated world and the built service worker, in Linux headless Chromium at a 1440×900 CSS viewport. On the updated progression fixture, the only pickup was Piston Boots; real movement/drop keys collected them at zero coins. The HUD changed from 0/1 to 1/1 encounters complete, and manual Equip activated the 1.2× jump multiplier. A temporary original HTML button with a measured coin-winning identity was then inserted beside the lower platform: it produced four coins and no equipment. Walking into its first coin awarded 5 currency and 20 XP, with inventory still containing one item. The equipped fixture screenshot was visually inspected. This smoke did not repeat browser-restart or the full website matrix; historical observations below retain their original generation behavior and fixture identities.
+
 ## Version 1.3.0: rendering, viewport pickups, and incremental discovery
 
 This section separates observed browser evidence from the later rendering and catch-up changes. Read-only browser agents exercised a frozen pre-final 1.3 build in owned disposable profiles using **Linux headless Chromium 155**. They used real keyboard events, native controls, DOM measurements, and visually inspected screenshots. Production activation and lifecycle checks used the actual unpacked extension; detailed motion and pickup measurements also used the Game diagnostic. The frozen observations below precede the final media-padding, clearance-epoch, discovery-priority, and population-cache refinements. They do not establish final post-fix rendering, catch-up latency, or performance.

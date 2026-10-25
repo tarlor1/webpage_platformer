@@ -155,7 +155,9 @@ export function mountProgressionUI(
         if (claimed.has(coinId(encounter, index))) platformCoins++;
       }
       collected += platformCoins;
-      if (platformCoins === encounter.coinCount) completed++;
+      const coinsComplete = platformCoins === encounter.coinCount;
+      const equipmentComplete = !encounter.equipment || state?.claimedRewards.includes(encounter.id);
+      if ((encounter.coinCount > 0 || encounter.equipment) && coinsComplete && equipmentComplete) completed++;
     }
     setText(page, state
       ? `Discovered platforms: ${completed}/${encounters.length} complete · ${collected}/${total} coins collected`

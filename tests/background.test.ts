@@ -6,12 +6,22 @@ import {
   type PlayerState, type ProgressionResponse,
 } from '../src/progression/progression-types';
 
-function equipmentEncounter(url: string) {
-  for (let index = 0; index < 10000; index++) {
+function equipmentEncounter(url: string, withCoins = false) {
+  for (let index = 0; index < 100000; index++) {
     const encounter = encounterForPlatform(url, `platform:${index}`);
-    if (encounter.equipment) return { ...encounter, equipment: encounter.equipment };
+    if (encounter.equipment && (encounter.coinCount > 0) === withCoins) {
+      return { ...encounter, equipment: encounter.equipment };
+    }
   }
   throw new Error('A deterministic equipment platform must exist.');
+}
+
+function coinEncounter(url: string, prefix = 'coins') {
+  for (let index = 0; index < 10000; index++) {
+    const encounter = encounterForPlatform(url, `${prefix}:${index}`);
+    if (encounter.coinCount > 0 && encounter.equipment === null) return encounter;
+  }
+  throw new Error('A deterministic coin platform must exist.');
 }
 
 test('worker recovers durable ownership and serializes storage pickups with coin and equip requests', async () => {
@@ -77,17 +87,19 @@ test('worker recovers durable ownership and serializes storage pickups with coin
         ...legacy, version: 2, revision: legacy.revision + 1,
         inventory: [legacyBoots, startupEncounter.equipment],
         claimedRewards: [...legacy.claimedRewards, startupEncounter.id],
+        completedEncounters: [...legacy.completedEncounters, startupEncounter.id],
       });
     }
     assert.deepEqual(storage[startupKey], startupOwnership);
     assert.deepEqual(storage[LEGACY_PLAYER_STORAGE_KEY], legacy);
 
     const url = 'https://example.com/worker';
-    const encounter = equipmentEncounter(url);
-    const logicalKey = encounter.logicalKey;
+    const encounter = equipmentEncounter(url, true);
+    const coins = encounter;
+    const logicalKey = coins.logicalKey;
     const ownership = { encounterId: encounter.id, equipment: encounter.equipment };
     const ownershipKey = EQUIPMENT_STORAGE_PREFIX + encounter.equipment.id;
-    const requests = Array.from({ length: encounter.coinCount }, (_, index) =>
+    const requests = Array.from({ length: coins.coinCount }, (_, index) =>
       [send({ type: 'progress:collect', url, logicalKey, index }, 1),
         send({ type: 'progress:collect', url: `${url}?utm_source=tab#heading`, logicalKey, index }, 2)]).flat();
     // Physical pickups write ownership directly, concurrently with both tabs' coins.
@@ -95,17 +107,19 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     const results = await Promise.all(requests);
     await Promise.all(ownershipWrites);
     assert.ok(results.every(result => result.ok));
-    assert.equal(results.filter(result => result.ok && !result.duplicate).length, encounter.coinCount);
-    assert.equal(results.filter(result => result.ok && result.duplicate).length, encounter.coinCount);
+    assert.equal(results.filter(result => result.ok && !result.duplicate).length, coins.coinCount);
+    assert.equal(results.filter(result => result.ok && result.duplicate).length, coins.coinCount);
     assert.equal(results.filter(result => result.ok && result.reward).length, 0);
     const final = await send({ type: 'progress:get' });
     if (!final.ok) throw new Error(final.error);
-    assert.equal(final.state.coins, legacy.coins + encounter.coinCount * 5);
-    assert.equal(final.state.xp, legacy.xp + encounter.coinCount * 20);
-    assert.equal(final.state.revision, legacy.revision + encounter.coinCount + 2);
+    assert.equal(final.state.coins, legacy.coins + coins.coinCount);
+    assert.equal(final.state.xp, legacy.xp + coins.coinCount * 20);
+    assert.equal(final.state.revision, legacy.revision + coins.coinCount + 2);
     assert.deepEqual(final.state.inventory, [legacyBoots, startupEncounter.equipment, encounter.equipment]);
     assert.equal(final.state.equippedItemId, legacyBoots.id);
     assert.equal(final.state.claimedRewards.filter(id => id === encounter.id).length, 1);
+    assert.deepEqual(new Set(final.state.completedEncounters),
+      new Set([...legacy.completedEncounters, startupEncounter.id, coins.id, encounter.id]));
     assert.deepEqual(storage[ownershipKey], ownership);
     assert.deepEqual(storage[LEGACY_PLAYER_STORAGE_KEY], legacy);
     assert.equal(fullReads, 1, 'normal requests do not rescan durable ownership');
@@ -136,6 +150,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
       { type: 'progress:collect', url, logicalKey, index: 0.5 },
       { type: 'progress:collect', url: 'file:///bad', logicalKey, index: 0 },
       { type: 'progress:collect', url, logicalKey, index: 99 },
+      { type: 'progress:collect', url, logicalKey: equipmentEncounter(url).logicalKey, index: 0 },
       { type: 'progress:collect-equipment', url, logicalKey },
       { type: 'progress:equip', itemId: 42 },
       { type: 'progress:equip', itemId: 'unowned' },
@@ -179,12 +194,12 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(indexingErrors, 1);
     assert.deepEqual(storage[interruptedKey], interruptedOwnership);
 
-    const retry = { type: 'progress:collect', url, logicalKey: 'new-content', index: 0 };
+    const retry = { type: 'progress:collect', url, logicalKey: coinEncounter(url, 'new-content').logicalKey, index: 0 };
     failNextWrite = true;
     assert.equal((await send(retry)).ok, false);
     const recovered = await send(retry, 2);
     if (!recovered.ok) throw new Error(recovered.error);
-    assert.equal(recovered.state.coins, final.state.coins + 5);
+    assert.equal(recovered.state.coins, final.state.coins + 1);
     assert.deepEqual(recovered.state.inventory, recoveredOwnership.state.inventory);
     assert.equal(recovered.state.equippedItemId, startupEncounter.equipment.id);
     const retried = await send(retry);
@@ -192,6 +207,55 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     assert.equal(retried.duplicate, true);
     assert.deepEqual(retried.state, recovered.state);
     assert.equal(fullReads, 3);
+
+    for (const equipmentFirst of [true, false]) {
+      const bothUrl = `https://example.com/both-order-${equipmentFirst}`;
+      const both = equipmentEncounter(bothUrl, true);
+      const bothOwnership = { encounterId: both.id, equipment: both.equipment };
+      const bothOwnershipKey = EQUIPMENT_STORAGE_PREFIX + both.equipment.id;
+      const before = await send({ type: 'progress:get' });
+      if (!before.ok) throw new Error(before.error);
+      if (equipmentFirst) {
+        await mockChrome.storage.local.set({ [bothOwnershipKey]: bothOwnership });
+        const equipmentOnly = await send({ type: 'progress:get' });
+        if (!equipmentOnly.ok) throw new Error(equipmentOnly.error);
+        assert.deepEqual(equipmentOnly.state.inventory, [...before.state.inventory, both.equipment]);
+        assert.equal(equipmentOnly.state.coins, before.state.coins);
+        assert.equal(equipmentOnly.state.xp, before.state.xp);
+        assert.deepEqual(equipmentOnly.state.collectedCoins, before.state.collectedCoins);
+      }
+      for (let index = 0; index < both.coinCount; index++) {
+        const collected = await send({ type: 'progress:collect', url: bothUrl, logicalKey: both.logicalKey, index });
+        if (!collected.ok) throw new Error(collected.error);
+        assert.equal(collected.duplicate, false);
+        assert.equal(collected.reward, null);
+        if (!equipmentFirst) {
+          assert.deepEqual(collected.state.inventory, before.state.inventory);
+          assert.deepEqual(collected.state.claimedRewards, before.state.claimedRewards);
+          assert.equal(storage[bothOwnershipKey], undefined);
+        }
+      }
+      if (!equipmentFirst) await mockChrome.storage.local.set({ [bothOwnershipKey]: bothOwnership });
+      const completed = await send({ type: 'progress:get' });
+      if (!completed.ok) throw new Error(completed.error);
+      assert.equal(completed.state.coins, before.state.coins + both.coinCount);
+      assert.equal(completed.state.xp, before.state.xp + both.coinCount * 20);
+      assert.equal(completed.state.revision, before.state.revision + both.coinCount + 1);
+      assert.deepEqual(completed.state.inventory, [...before.state.inventory, both.equipment]);
+      assert.equal(completed.state.equippedItemId, before.state.equippedItemId);
+      assert.equal(completed.state.claimedRewards.filter(id => id === both.id).length, 1);
+      assert.equal(completed.state.completedEncounters.filter(id => id === both.id).length, 1);
+      const beforeRepeats: number = writes;
+      await mockChrome.storage.local.set({ [bothOwnershipKey]: bothOwnership });
+      for (let index = 0; index < both.coinCount; index++) {
+        const duplicate = await send({ type: 'progress:collect', url: bothUrl, logicalKey: both.logicalKey, index });
+        if (!duplicate.ok) throw new Error(duplicate.error);
+        assert.equal(duplicate.duplicate, true);
+        assert.deepEqual(duplicate.state, completed.state);
+      }
+      assert.equal(writes, beforeRepeats);
+      assert.deepEqual(storage[PLAYER_STORAGE_KEY], completed.state);
+    }
   } finally {
     globalThis.chrome = originalChrome;
     console.error = originalConsoleError;

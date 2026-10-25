@@ -2,18 +2,31 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PickupIndex, planPickups, updatePickups } from '../src/progression/collectibles';
 import { encounterForPlatform } from '../src/progression/encounters';
+import { collectCoin, collectEquipment, createPlayerState } from '../src/progression/player-state';
 import { createPlayer, stepBody } from '../src/engine/physics';
 import { MOTION, type Platform } from '../src/engine/types';
 import type { CoinPickup, EquipmentPickup, PagePickup } from '../src/progression/progression-types';
 
 const URL = 'https://example.com/native-surfaces';
 
-function sevenCoinKey(): string {
-  for (let index = 0; index < 100; index++) {
-    const key = `seven:${index}`;
-    if (encounterForPlatform(URL, key).coinCount === 7) return key;
+function coinKey(prefix: string, count?: number): string {
+  for (let index = 0; index < 10000; index++) {
+    const key = `${prefix}:${index}`;
+    const encounter = encounterForPlatform(URL, key);
+    if (encounter.coinCount > 0 && encounter.equipment === null
+      && (count === undefined || encounter.coinCount === count)) return key;
   }
-  throw new Error('Expected a seven-coin platform seed.');
+  throw new Error('Expected a deterministic coin platform.');
+}
+
+function equipmentEncounter(prefix: string, withCoins = false) {
+  for (let index = 0; index < 100000; index++) {
+    const encounter = encounterForPlatform(URL, `${prefix}:${index}`);
+    if (encounter.equipment && (encounter.coinCount > 0) === withCoins) {
+      return { ...encounter, equipment: encounter.equipment };
+    }
+  }
+  throw new Error('Expected a deterministic equipment platform.');
 }
 
 function coinAt(id: string, x: number, y: number): CoinPickup {
@@ -51,7 +64,7 @@ function collectFromSurface(platform: Platform): void {
 }
 
 test('all seven distinct coins are reachable on even the narrowest eligible native top', () => {
-  const key = sevenCoinKey();
+  const key = coinKey('seven', 7);
   for (const width of [6, 12, 22, 30, 80, 500]) {
     collectFromSurface({ id: 'native', logicalKey: key, x: 100, y: 500, width });
   }
@@ -59,8 +72,8 @@ test('all seven distinct coins are reachable on even the narrowest eligible nati
 
 test('each logical platform has its own complete reward set without spawn or position dependence', () => {
   const platforms: Platform[] = [
-    { id: 'lower', logicalKey: 'lower-content', x: 0, y: 900, width: 60 },
-    { id: 'upper', logicalKey: 'upper-content', x: 9000, y: 100, width: 300 },
+    { id: 'lower', logicalKey: coinKey('lower-content'), x: 0, y: 900, width: 60 },
+    { id: 'upper', logicalKey: coinKey('upper-content'), x: 9000, y: 100, width: 300 },
   ];
   const encounters = platforms.map(platform => encounterForPlatform(URL, platform.logicalKey!));
   const pickups = planPickups(encounters, platforms);
@@ -71,12 +84,13 @@ test('each logical platform has its own complete reward set without spawn or pos
 });
 
 test('clones and wrapped segments share one claim set with deterministic representative selection', () => {
+  const key = coinKey('paragraph');
   const platforms: Platform[] = [
-    { id: 'text-wide', logicalKey: 'paragraph', x: 10, y: 200, width: 180 },
-    { id: 'text-wrap', logicalKey: 'paragraph', x: 10, y: 240, width: 60 },
-    { id: 'clone', logicalKey: 'paragraph', x: 600, y: 200, width: 180 },
+    { id: 'text-wide', logicalKey: key, x: 10, y: 200, width: 180 },
+    { id: 'text-wrap', logicalKey: key, x: 10, y: 240, width: 60 },
+    { id: 'clone', logicalKey: key, x: 600, y: 200, width: 180 },
   ];
-  const encounters = [encounterForPlatform(URL, 'paragraph')];
+  const encounters = [encounterForPlatform(URL, key)];
   const pickups = planPickups(encounters, platforms);
   assert.equal(encounters.length, 1);
   assert.equal(pickups.filter(pickup => pickup.kind === 'coin').length, encounters[0]!.coinCount);
@@ -103,8 +117,8 @@ test('clones and wrapped segments share one claim set with deterministic represe
 });
 
 test('runtime materialization retains claim identities while retiring absent and collected coins', () => {
-  const first: Platform = { id: 'first', logicalKey: 'first-content', x: 0, y: 500, width: 80 };
-  const second: Platform = { id: 'second', logicalKey: 'second-content', x: 300, y: 600, width: 30 };
+  const first: Platform = { id: 'first', logicalKey: coinKey('first-content'), x: 0, y: 500, width: 80 };
+  const second: Platform = { id: 'second', logicalKey: coinKey('second-content'), x: 300, y: 600, width: 30 };
   const encounters = [encounterForPlatform(URL, first.logicalKey!), encounterForPlatform(URL, second.logicalKey!)];
   const original = planPickups(encounters, [first]);
   const originalIds = original.map(pickup => pickup.id);
@@ -122,7 +136,7 @@ test('runtime materialization retains claim identities while retiring absent and
 });
 
 test('movement, resize, disappearance, and runtime replacement change anchors without changing claims', () => {
-  const platform: Platform = { id: 'moving', logicalKey: 'moving-content', x: 100, y: 500, width: 300 };
+  const platform: Platform = { id: 'moving', logicalKey: coinKey('moving-content'), x: 100, y: 500, width: 300 };
   const pickups = planPickups([encounterForPlatform(URL, platform.logicalKey!)], [platform]);
   const original = pickups.map(pickup => ({ ...pickup }));
   platform.x += 80;
@@ -147,7 +161,7 @@ test('movement, resize, disappearance, and runtime replacement change anchors wi
 
 test('viewport queries return every visible reward without a character-dependent cap', () => {
   const platforms: Platform[] = Array.from({ length: 24 }, (_, index) => ({
-    id: `surface:${index}`, logicalKey: `content:${index}`,
+    id: `surface:${index}`, logicalKey: coinKey(`content:${index}`),
     x: index % 6 * 140 + (index >= 12 ? 10000 : 0),
     y: 180 + Math.floor(index % 12 / 6) * 160, width: 100,
   }));
@@ -252,7 +266,7 @@ test('spatial memberships follow movement, availability, replacement, and remova
 });
 
 test('source retirement and collected rewards leave queries while surviving anchors stay stable', () => {
-  const platform: Platform = { id: 'original', logicalKey: 'retiring-content', x: 100, y: 400, width: 200 };
+  const platform: Platform = { id: 'original', logicalKey: coinKey('retiring-content'), x: 100, y: 400, width: 200 };
   const encounter = encounterForPlatform(URL, platform.logicalKey!);
   const pickups = planPickups([encounter], [platform]);
   const anchors = pickups.map(pickup => [pickup.id, pickup.x, pickup.y]);
@@ -279,13 +293,8 @@ test('source retirement and collected rewards leave queries while surviving anch
   assert.ok(output.every(pickup => !collected.has(pickup.id)));
 });
 
-test('equipment is a separate ground-level pickup before any coin completion', () => {
-  let encounter;
-  for (let index = 0; index < 10000; index++) {
-    const candidate = encounterForPlatform(URL, `physical-gear:${index}`);
-    if (candidate.equipment) { encounter = candidate; break; }
-  }
-  assert.ok(encounter?.equipment);
+test('equipment-only encounters materialize one ground-level pickup and no coins', () => {
+  const encounter = equipmentEncounter('physical-gear');
   const platform: Platform = { id: 'gear-edge', logicalKey: encounter.logicalKey, x: 100, y: 500, width: 300 };
   const initial = planPickups([encounter, encounter], [platform]);
   const gear = initial.filter(pickup => pickup.kind === 'equipment');
@@ -293,10 +302,62 @@ test('equipment is a separate ground-level pickup before any coin completion', (
   assert.equal(gear[0]!.id, encounter.equipment.id);
   assert.equal(gear[0]!.platformId, platform.id);
   assert.ok(gear[0]!.y >= platform.y - MOTION.height && gear[0]!.y < platform.y);
-  const coins = initial.filter(pickup => pickup.kind === 'coin');
-  const claimedCoins = new Set(coins.map(pickup => pickup.id));
-  assert.deepEqual(planPickups([encounter], [platform], initial, claimedCoins).map(pickup => pickup.id), [gear[0]!.id]);
+  assert.equal(encounter.coinCount, 0);
+  assert.deepEqual(initial, gear);
   const claimedGear = new Set([encounter.id]);
-  assert.deepEqual(planPickups([encounter], [platform], initial, claimedCoins, claimedGear), []);
-  assert.ok(planPickups([encounter], [platform], initial, undefined, claimedGear).every(pickup => pickup.kind === 'coin'));
+  assert.deepEqual(planPickups([encounter], [platform], initial, undefined, claimedGear), []);
+});
+
+test('a naturally both-winning platform materializes independently claimable coins and equipment in either order', () => {
+  const encounter = equipmentEncounter('physical-both', true);
+  const platform: Platform = { id: 'both-edge', logicalKey: encounter.logicalKey, x: 100, y: 500, width: 300 };
+  const initial = planPickups([encounter, encounter], [platform]);
+  const coins = initial.filter(pickup => pickup.kind === 'coin');
+  const equipment = initial.find(pickup => pickup.kind === 'equipment');
+  assert.ok(equipment);
+  assert.ok(encounter.coinCount > 0);
+  assert.equal(coins.length, encounter.coinCount);
+  assert.equal(initial.length, encounter.coinCount + 1);
+  assert.equal(equipment.id, encounter.equipment.id);
+  assert.deepEqual(equipment.equipment, encounter.equipment);
+  const ownership = { encounterId: equipment.encounterId, equipment: equipment.equipment };
+  for (const equipmentFirst of [true, false]) {
+    let state = createPlayerState();
+    let pickups = planPickups([encounter], [platform]);
+    const materialize = () => planPickups([encounter], [platform], pickups,
+      new Set(state.collectedCoins), new Set(state.claimedRewards));
+    if (equipmentFirst) {
+      state = collectEquipment(state, ownership).state;
+      pickups = materialize();
+      assert.deepEqual(pickups.map(pickup => pickup.id), coins.map(pickup => pickup.id));
+      assert.equal(state.coins, 0);
+      assert.equal(state.xp, 0);
+    }
+    for (const coin of coins) {
+      const result = collectCoin(state, URL, coin.logicalKey, coin.index);
+      assert.equal(result.duplicate, false);
+      assert.equal(result.reward, null);
+      state = result.state;
+      pickups = materialize();
+      assert.ok(!pickups.some(pickup => pickup.id === coin.id));
+      if (!equipmentFirst) {
+        assert.deepEqual(state.inventory, []);
+        assert.deepEqual(state.claimedRewards, []);
+        assert.deepEqual(pickups.filter(pickup => pickup.kind === 'equipment').map(pickup => pickup.id), [equipment.id]);
+      }
+    }
+    if (!equipmentFirst) {
+      assert.deepEqual(pickups.map(pickup => pickup.id), [equipment.id]);
+      const result = collectEquipment(state, ownership);
+      assert.equal(result.duplicate, false);
+      state = result.state;
+      pickups = materialize();
+    }
+    assert.deepEqual(pickups, []);
+    assert.equal(state.coins, encounter.coinCount);
+    assert.deepEqual(state.inventory, [encounter.equipment]);
+    assert.equal(collectEquipment(state, ownership).state, state);
+    for (const coin of coins) assert.equal(collectCoin(state, URL, coin.logicalKey, coin.index).state, state);
+    assert.deepEqual(materialize(), []);
+  }
 });
