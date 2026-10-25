@@ -2,6 +2,7 @@ export class Input {
   left = false;
   right = false;
   jump = false;
+  jumpHeld = false;
   drop = false;
   interact = false;
   private abort = new AbortController();
@@ -17,6 +18,7 @@ export class Input {
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.left = true;
       if (e.code === 'KeyD' || e.code === 'ArrowRight') this.right = true;
       if (!e.repeat && ['Space', 'KeyW', 'ArrowUp'].includes(e.code)) this.jump = true;
+      if (['Space', 'KeyW', 'ArrowUp'].includes(e.code)) this.jumpHeld = true;
       if (!e.repeat && (e.code === 'ArrowDown' || e.code === 'KeyS')) this.drop = true;
       if (!e.repeat && e.code === 'KeyB') debug();
       if (!e.repeat && e.code === 'KeyE') this.interact = true;
@@ -24,6 +26,7 @@ export class Input {
     window.addEventListener('keyup', e => {
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.left = false;
       if (e.code === 'KeyD' || e.code === 'ArrowRight') this.right = false;
+      if (['Space', 'KeyW', 'ArrowUp'].includes(e.code)) this.jumpHeld = false;
     }, { signal });
     window.addEventListener('blur', () => this.clear(), { signal });
     document.addEventListener('focusin', () => { if (document.activeElement !== surface) this.clear(); }, { signal });
@@ -32,6 +35,6 @@ export class Input {
     return document.activeElement === this.surface && !document.hidden && document.hasFocus()
       && this.surface.shadowRoot?.activeElement?.classList.contains('surface') === true;
   }
-  clear(): void { this.left = this.right = this.jump = this.drop = this.interact = false; }
+  clear(): void { this.left = this.right = this.jump = this.jumpHeld = this.drop = this.interact = false; }
   dispose(): void { this.abort.abort(); this.clear(); }
 }

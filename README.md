@@ -31,7 +31,7 @@ For development, `bun run watch` rebuilds TypeScript changes. After changing the
 | Control | Action |
 | --- | --- |
 | A / D or ← / → | Run left / right |
-| Space / W / ↑ | Jump; pass upward through platforms |
+| Space / W / ↑ | Jump; hold while descending in mid-air to glide |
 | S / ↓ | Drop through the platform you are standing on; tap again for another level |
 | E | Talk to the nearby shopkeeper and open the shop |
 | B or **Debug** | Toggle terrain edges, player collision box, coordinates, and grounded state; gold edges identify actual moving DOM terrain |

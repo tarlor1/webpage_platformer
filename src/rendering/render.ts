@@ -2,7 +2,7 @@ import type { Body, Level } from '../engine/types';
 import { drawScenery } from './scenery-art';
 import type { SceneryScene } from './scenery-types';
 import type { PagePickup } from '../progression/progression-types';
-export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: Body, debug: boolean, facing: number, scenery: SceneryScene, pickups: readonly PagePickup[], collected: ReadonlySet<string>, jumpBoots: boolean): void {
+export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: Body, debug: boolean, facing: number, scenery: SceneryScene, pickups: readonly PagePickup[], collected: ReadonlySet<string>, jumpBoots: boolean, gliding = false): void {
   const sx = scrollX, sy = scrollY;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   ctx.save(); ctx.translate(-sx, -sy);
@@ -74,6 +74,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   ctx.fillStyle = '#202f39'; ctx.fillRect(x + 3, y + 10, w - 6, h - 10);
   ctx.fillStyle = '#70878b'; ctx.fillRect(x, y + 9, w, 8); ctx.fillRect(x + 2, y, w - 4, 13);
   ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + (facing > 0 ? 11 : 3), y + 4, 8, 5);
+  if (gliding) {
+    ctx.fillStyle = '#d5a653';
+    ctx.fillRect(x - 9, y - 8, w + 18, 3);
+    ctx.fillStyle = '#f5cb7d';
+    ctx.fillRect(x - 5, y - 5, 3, 5); ctx.fillRect(x + w + 2, y - 5, 3, 5);
+  }
   ctx.fillStyle = jumpBoots ? '#9bbfc8' : '#d3a159'; ctx.fillRect(x + 1, y + h - 5, 8, 5); ctx.fillRect(x + w - 9, y + h - 5, 8, 5);
   if (debug) { ctx.strokeStyle = '#e04467'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h); }
   ctx.restore();

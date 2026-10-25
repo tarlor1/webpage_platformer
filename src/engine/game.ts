@@ -704,7 +704,8 @@ export class Game {
           player.grounded = false;
           this.coyote = this.jumpBuffer = 0;
         }
-        stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps);
+        const gliding = input.jumpHeld && !player.grounded && player.vy >= 0;
+        stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps, gliding);
         this.accumulator -= dt;
         this.collectPickups();
         this.rememberStanding();
@@ -732,7 +733,8 @@ export class Game {
       }
       this.geometry!.commitMotion();
     }
-    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.visiblePickups, this.collected, this.jumpMultiplier > 1);
+    const gliding = input.jumpHeld && !player.grounded && player.vy >= 0;
+    drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.visiblePickups, this.collected, this.jumpMultiplier > 1, gliding);
     drawPlayerLocator(this.ctx!, player, now - this.locatorStarted);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
