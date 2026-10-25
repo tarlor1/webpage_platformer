@@ -3,6 +3,7 @@ import { buildLevel, fellBelowViewport, outsidePage } from './level';
 import { Input } from './input';
 import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from './physics';
 import { drawWorld } from '../rendering/render';
+import { TRAIN_WIDTH } from '../rendering/train-sprite';
 import { drawPlayerLocator } from '../rendering/player-locator';
 import { MOTION, OVERLAY_ID, type Body, type Level, type Platform } from './types';
 import { TextClearance } from '../rendering/text-clearance';
@@ -504,7 +505,6 @@ export class Game {
     if (!placement) return;
     const rail = this.designs.find(design => design.kind === 'rail');
     if (rail) placement.design = rail;
-    placement.width = Math.max(placement.width, 32);
     placement.height = placement.design.height;
     const platform = this.geometry?.registryPlatforms.find(item => item.id === placement.platformId);
     if (platform) placement.y = platform.y - placement.height / 2;
@@ -514,6 +514,7 @@ export class Game {
     const firstThreeViewports = scrollY + innerHeight * 3;
     const candidates = this.scenery.placements
       .filter(placement => placement.visible
+        && placement.width >= TRAIN_WIDTH
         && placement.y + placement.height >= scrollY
         && placement.y <= firstThreeViewports)
       .sort((a, b) => a.platformId.localeCompare(b.platformId));
@@ -532,7 +533,7 @@ export class Game {
     const placement = this.scenery.placements.find(item => item.platformId === shopkeeper.placementId);
     if (!placement?.visible) return false;
     const platformY = placement.y + placement.height / 2;
-    return Math.abs(player.x + player.width / 2 - (placement.x + 8)) <= 42
+    return Math.abs(player.x + player.width / 2 - (placement.x + TRAIN_WIDTH / 4)) <= 42
       && Math.abs(player.y + player.height - platformY) <= 42;
   }
 

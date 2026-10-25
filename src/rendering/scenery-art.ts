@@ -1,5 +1,7 @@
 import type { SceneryDesign, SceneryPlacement } from './scenery-types';
 import { pageSeedKey } from '../page/page-identity';
+import { railSprite, RAIL_SPRITE } from './rail-sprite';
+import { grassSprite, GRASS_SPRITE } from './grass-sprite';
 
 const VERSION = 3;
 const KINDS: readonly SceneryDesign['kind'][] = ['rail', 'road'];
@@ -18,7 +20,7 @@ function hash(value: string): number {
   return result >>> 0;
 }
 
-/** Six URL-seeded, thin native-edge track/road styles. */
+/** URL-seeded rail/grass materials. The internal road kind now uses grass artwork. */
 export function sceneryDesigns(url: string): SceneryDesign[] {
   const seed = hash(`scenery:${VERSION}:${pageSeedKey(url)}`);
   let state = seed;
@@ -33,7 +35,8 @@ export function sceneryDesigns(url: string): SceneryDesign[] {
     id: `scenery-v${VERSION}-${seed.toString(16)}-${index}`,
     kind: KINDS[(index + offset) % KINDS.length]!,
     width: 480,
-    height: 10,
+    height: KINDS[(index + offset) % KINDS.length] === 'road' ? GRASS_SPRITE.frame.height * GRASS_SPRITE.scale : 10,
+    surfaceOffset: KINDS[(index + offset) % KINDS.length] === 'road' ? 2 : 5,
     palette: next() % PALETTES.length,
     variant: next() % 8,
     rank: next(),
@@ -47,25 +50,21 @@ function textureFor(ctx: CanvasRenderingContext2D, design: SceneryDesign): HTMLC
   canvas.width = design.width;
   canvas.height = design.height;
   const paint = canvas.getContext('2d')!;
+  paint.imageSmoothingEnabled = false;
   const palette = PALETTES[design.palette];
-  if (design.kind === 'rail') {
-    paint.fillStyle = palette.sleeper;
-    const pitch = [16, 20, 24][design.variant % 3];
-    for (let x = design.variant; x < design.width; x += pitch) paint.fillRect(x, 0, 4, 10);
-    paint.fillStyle = palette.rail;
-    paint.fillRect(0, 1, design.width, 2);
-    paint.fillRect(0, 7, design.width, 2);
-    paint.fillStyle = '#edf1f3';
-    paint.fillRect(0, 1, design.width, 1);
-    paint.fillRect(0, 7, design.width, 1);
-  } else {
-    paint.fillStyle = palette.road;
-    paint.fillRect(0, 0, design.width, 10);
-    paint.fillStyle = '#a9b3b3';
-    paint.fillRect(0, 0, design.width, 1);
-    paint.fillRect(0, 9, design.width, 1);
-    paint.fillStyle = palette.marking;
-    for (let x = design.variant; x < design.width; x += 24) paint.fillRect(x, 4, 11, 2);
+  const rail = design.kind === 'rail';
+  const definition = rail ? RAIL_SPRITE : GRASS_SPRITE;
+  const sprite = rail ? railSprite : grassSprite;
+  const tileWidth = definition.frame.width * definition.scale;
+  const tileHeight = definition.frame.height * definition.scale;
+  for (let x = 0; x < design.width; x += tileWidth) {
+    if (!sprite.draw(paint, x + tileWidth / 2, design.height / 2 + tileHeight / 2, 1)) {
+      // Keep platforms visible during the asynchronous image decode. Do not cache this placeholder.
+      paint.fillStyle = rail ? palette.rail : '#719d45';
+      paint.fillRect(0, 1, design.width, 1);
+      paint.fillRect(0, design.height - 2, design.width, 1);
+      return canvas;
+    }
   }
   textures.set(design, canvas);
   return canvas;
@@ -73,6 +72,8 @@ function textureFor(ctx: CanvasRenderingContext2D, design: SceneryDesign): HTMLC
 
 /** Tile the original artwork at native scale; eligibility already guarantees a clean strip. */
 export function drawScenery(ctx: CanvasRenderingContext2D, placements: readonly SceneryPlacement[]): void {
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   for (const placement of placements) {
     if (!placement.visible) continue;
     const { design, x, y, width, height } = placement;
@@ -87,4 +88,5 @@ export function drawScenery(ctx: CanvasRenderingContext2D, placements: readonly 
       ctx.drawImage(texture, 0, 0, tileWidth, height, x + offset, y, tileWidth, height);
     }
   }
+  ctx.restore();
 }

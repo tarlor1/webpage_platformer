@@ -14,7 +14,7 @@ function position(placement: SceneryPlacement, platform: Platform): void {
   placement.width = platform.width;
   placement.height = placement.design.height;
   placement.x = platform.x;
-  placement.y = platform.y - placement.height / 2;
+  placement.y = platform.y - (placement.design.surfaceOffset ?? placement.height / 2);
 }
 
 /** A logical surface, including its clones and wrapped fragments, has one URL-seeded material. */

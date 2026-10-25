@@ -12,6 +12,20 @@ import type { Rect } from '../src/rendering/scenery-types';
 const design: SceneryDesign = { id: 'surface-track', kind: 'rail', width: 480, height: 10, palette: 0, variant: 1, rank: 42 };
 const platform: Platform = { id: 'original-heading', x: 20, y: 100, width: 300 };
 
+test('grass aligns its surface to the platform and protects the full dirt tile below it', () => {
+  const grass: SceneryDesign = { ...design, kind: 'road', height: 10, surfaceOffset: 2 };
+  const source = { ...platform };
+  const placements = placeScenery([grass], [source]);
+  assert.equal(placements[0].y, source.y - 2);
+  assert.equal(placements[0].height, 10);
+  assert.equal(source.y, 100, 'artwork leaves collision geometry unchanged');
+  source.y += 20;
+  updateScenery(placements, [source]);
+  assert.equal(placements[0].y, source.y - 2);
+  updateScenery(placements, [source], [{ x: source.x, y: source.y + 5, width: 10, height: 3 }]);
+  assert.equal(placements[0].visible, false, 'dirt cannot cover protected content');
+});
+
 test('material stays attached when scrolling changes the nearby candidate set', () => {
   const other: Platform = { id: 'another-heading', x: 360, y: 220, width: 420 };
   const first = placeScenery([design], [platform]);

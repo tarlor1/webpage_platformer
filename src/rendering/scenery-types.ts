@@ -14,6 +14,8 @@ export interface SceneryDesign {
   width: number;
   height: number;
   palette: number;
+  /** Collision edge measured from the texture top; defaults to half its height. */
+  surfaceOffset?: number;
   variant: number;
   rank: number;
 }
@@ -22,7 +24,7 @@ export interface SceneryPlacement {
   platformId: string;
   logicalKey: string;
   x: number;
-  /** Texture top in document pixels; its center is the native collision edge. */
+  /** Texture top in document pixels; design.surfaceOffset locates the collision edge. */
   y: number;
   width: number;
   height: number;
