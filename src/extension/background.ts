@@ -2,7 +2,7 @@ import { buyItem, collectCoin, collectEquipment, equipItem, readPlayerState, sel
 import { validLogicalKey } from '../progression/encounters';
 import {
   EQUIPMENT_STORAGE_PREFIX, LEGACY_PLAYER_STORAGE_KEY, PLAYER_STORAGE_KEY,
-  type PlayerState, type ProgressionResponse,
+  type Equipment, type PlayerState, type ProgressionResponse,
 } from '../progression/progression-types';
 
 // Aggregate reads and commits share one queue across messages and ownership events.
@@ -55,6 +55,9 @@ async function handleRequest(request: Record<string, unknown>): Promise<Progress
   if (request.type === 'progress:equip' && request.itemId !== null && typeof request.itemId !== 'string') {
     throw new Error('Equipping requires an owned item ID or null.');
   }
+  if (request.type === 'progress:equip' && request.slot !== undefined && request.slot !== 'boots' && request.slot !== 'glider') {
+    throw new Error('Invalid equipment slot.');
+  }
   if ((request.type === 'progress:buy' || request.type === 'progress:sell')
     && (typeof request.itemId !== 'string' || !request.itemId || request.itemId.length > 131072)) {
     
@@ -72,7 +75,7 @@ async function handleRequest(request: Record<string, unknown>): Promise<Progress
       transition = collectCoin(current, request.url as string, request.logicalKey as string, request.index as number);
       break;
     case 'progress:equip':
-      transition = equipItem(current, request.itemId as string | null);
+      transition = equipItem(current, request.itemId as string | null, request.slot as Equipment['slot'] | undefined);
       break;
     case 'progress:buy':
       transition = buyItem(current, request.itemId as string);

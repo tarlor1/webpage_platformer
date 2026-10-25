@@ -190,8 +190,8 @@ export class Game {
     this.materialStatus.className = 'material-status';
     shadow.querySelector('nav')!.before(this.materialStatus);
     this.progressionPanel = mountProgressionUI(shadow.querySelector('section')!, {
-      equip: async itemId => {
-        const state = await requestProgression({ type: 'progress:equip', itemId });
+      equip: async (itemId, slot) => {
+        const state = await requestProgression({ type: 'progress:equip', itemId, slot });
         this.acceptProgress(state, run);
       },
     });
@@ -560,8 +560,8 @@ export class Game {
     this.collected = new Set(state.collectedCoins);
     for (const item of state.inventory) this.pendingEquipment.delete(inventoryItemId(item));
     this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(inventoryItemId), ...this.pendingEquipment]);
-    this.jumpMultiplier = state.inventory.find(item => inventoryItemId(item) === state.equippedItemId)?.jumpMultiplier ?? 1;
-    this.gliderEquipped = state.inventory.some(item => inventoryItemId(item) === state.equippedItemId && item.ability === 'glide');
+    this.jumpMultiplier = state.inventory.find(item => inventoryItemId(item) === state.equippedItems.boots)?.jumpMultiplier ?? 1;
+    this.gliderEquipped = state.inventory.some(item => inventoryItemId(item) === state.equippedItems.glider && item.ability === 'glide');
     this.progressError = '';
     this.refreshPickups();
     this.progressionPanel?.update(state, this.encounters);

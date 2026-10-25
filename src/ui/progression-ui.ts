@@ -21,7 +21,7 @@ export interface ProgressionPanel {
 
 export function mountProgressionUI(
   section: HTMLElement,
-  actions: { equip: (itemId: string | null) => Promise<void> },
+  actions: { equip: (itemId: string | null, slot: Equipment['slot']) => Promise<void> },
 ): ProgressionPanel {
   const document = section.ownerDocument;
   const root = document.createElement('div');
@@ -187,13 +187,14 @@ export function mountProgressionUI(
         row = createRow(item);
         rows.set(instanceId, row);
       }
-      const equipped = state?.equippedItemId === instanceId;
+      const equipped = state?.equippedItems[item.slot] === instanceId;
       setText(row.name, item.name);
       setText(row.ids, `ID: ${item.id}\nInstance ID: ${instanceId}`);
       row.icon.style.borderColor = item.color ?? '#ad874e';
       setText(row.description, item.description);
       const heightBonus = Math.round((item.jumpMultiplier ** 2 - 1) * 100);
-      setText(row.effect, `Jump power ×${item.jumpMultiplier} · ${heightBonus}% higher jumps`);
+      setText(row.effect, item.slot === 'glider' ? 'Hold jump in midair to glide'
+        : `Jump power ×${item.jumpMultiplier} · ${heightBonus}% higher jumps`);
       row.marker.hidden = !equipped;
       setText(row.button, pending && (pendingItemId === instanceId || (pendingItemId === null && equipped))
         ? 'Saving…' : equipped ? 'Unequip' : 'Equip');
@@ -216,15 +217,16 @@ export function mountProgressionUI(
     const button = target.closest<HTMLButtonElement>('button[data-equipment-id]');
     if (!button || !root.contains(button) || pending || !currentState) return;
     const id = button.dataset.equipmentId;
-    if (!id || !currentState.inventory.some(item => inventoryItemId(item) === id)) return;
-    const itemId = currentState.equippedItemId === id ? null : id;
+    const item = currentState.inventory.find(item => inventoryItemId(item) === id);
+    if (!id || !item) return;
+    const itemId = currentState.equippedItems[item.slot] === id ? null : id;
     pending = true;
     pendingItemId = itemId;
     equipError = '';
     render();
     void (async () => {
       try {
-        await actions.equip(itemId);
+        await actions.equip(itemId, item.slot);
       } catch (error: unknown) {
         if (!disposed) equipError = `Could not save equipment: ${error instanceof Error ? error.message : String(error)}`;
       } finally {

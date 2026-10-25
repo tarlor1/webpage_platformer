@@ -18,8 +18,8 @@ export interface PlayerState {
   xp: number;
   level: number;
   inventory: Equipment[];
-  /** An owned copy's instanceId, not its shared catalog id. */
-  equippedItemId: string | null;
+  /** One owned instance per equipment slot. */
+  equippedItems: Record<Equipment['slot'], string | null>;
   completedEncounters: string[];
   claimedRewards: string[];
   collectedCoins: string[];
@@ -59,7 +59,7 @@ export interface EquipmentPickup extends PickupAnchor, EquipmentOwnership {
 export type PagePickup = CoinPickup | EquipmentPickup;
 export type ProgressionRequest = { type: 'progress:get' }
   | { type: 'progress:collect'; url: string; logicalKey: string; index: number }
-  | { type: 'progress:equip'; itemId: string | null }
+  | { type: 'progress:equip'; itemId: string | null; slot?: Equipment['slot'] }
   | { type: 'progress:buy'; itemId: string }
   | { type: 'progress:sell'; itemId: string };
 export type ProgressionResponse = { ok: true; state: PlayerState; duplicate?: boolean; reward?: Equipment | null }

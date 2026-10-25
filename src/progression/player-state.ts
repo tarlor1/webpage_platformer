@@ -17,7 +17,7 @@ export function createPlayerState(): PlayerState {
     xp: 0,
     level: 1,
     inventory: [],
-    equippedItemId: null,
+    equippedItems: { boots: null, glider: null },
     completedEncounters: [],
     claimedRewards: [],
     collectedCoins: [],
@@ -54,7 +54,7 @@ function equipment(value: unknown): value is Equipment {
 export function readPlayerState(value: unknown): PlayerState {
   if (value === undefined) return createPlayerState();
   if (typeof value !== 'object' || value === null) throw new Error('Saved player state is invalid. Progress was not changed.');
-  const state = value as Partial<Omit<PlayerState, 'version'>> & { version?: unknown };
+  const state = value as Partial<Omit<PlayerState, 'version'>> & { version?: unknown; equippedItemId?: unknown };
   if (state.version !== 2 && state.version !== 1) {
     throw new Error('Saved player state has an unsupported version. Progress was not changed.');
   }
@@ -75,25 +75,43 @@ export function readPlayerState(value: unknown): PlayerState {
     if (owned.has(instance)) throw new Error('Saved inventory has duplicate equipment instances. Progress was not changed.');
     owned.add(instance);
   }
-  if (state.equippedItemId !== null && (typeof state.equippedItemId !== 'string' || !owned.has(state.equippedItemId))) {
-    throw new Error('Saved equipped item is not owned. Progress was not changed.');
+  const selection = { boots: null, glider: null } as PlayerState['equippedItems'];
+  if (state.equippedItems !== undefined) {
+    if (!state.equippedItems || typeof state.equippedItems !== 'object') throw new Error('Saved equipment slots are invalid.');
+    for (const slot of ['boots', 'glider'] as const) {
+      const id = state.equippedItems[slot];
+      if (id !== null && (typeof id !== 'string'
+        || !state.inventory.some(item => inventoryItemId(item) === id && item.slot === slot))) {
+        throw new Error('Saved equipped item is not owned in that slot. Progress was not changed.');
+      }
+      selection[slot] = id;
+    }
+  } else {
+    if (state.equippedItemId !== null && (typeof state.equippedItemId !== 'string' || !owned.has(state.equippedItemId))) {
+      throw new Error('Saved equipped item is not owned. Progress was not changed.');
+    }
+    const selected = state.inventory.find(item => inventoryItemId(item) === state.equippedItemId);
+    if (selected) selection[selected.slot] = inventoryItemId(selected);
   }
   // Keep encounter/coin claims intact; only equipment identity changes.
   const inventory: Equipment[] = [];
-  let equippedItemId: string | null = null;
+  const equippedItems = { ...selection };
   for (const item of state.inventory) {
     const id = equipmentId(item);
     // Deterministic migration preserves every old copy and its original stats.
     const instanceId = item.instanceId ?? `legacy:${item.id}`;
-    if (inventoryItemId(item) === state.equippedItemId) equippedItemId = instanceId;
+    if (inventoryItemId(item) === selection[item.slot]) equippedItems[item.slot] = instanceId;
     inventory.push(item.id === id && item.instanceId === instanceId ? item : { ...item, id, instanceId });
   }
   if (new Set(inventory.map(inventoryItemId)).size !== inventory.length) {
     throw new Error('Saved inventory has duplicate equipment instances. Progress was not changed.');
   }
-  const changed = state.version !== 2 || equippedItemId !== state.equippedItemId
+  const changed = state.version !== 2 || state.equippedItemId !== undefined || !state.equippedItems
+    || equippedItems.boots !== state.equippedItems.boots || equippedItems.glider !== state.equippedItems.glider
     || inventory.length !== state.inventory.length || inventory.some((item, index) => item !== state.inventory![index]);
-  return changed ? { ...state, version: 2, inventory, equippedItemId } as PlayerState : state as PlayerState;
+  if (!changed) return state as PlayerState;
+  const { equippedItemId: _legacySelection, ...rest } = state;
+  return { ...rest, version: 2, inventory, equippedItems } as PlayerState;
 }
 
 function increment(value: number, amount: number): number {
@@ -163,13 +181,21 @@ export function collectEquipment(state: PlayerState, value: unknown): PlayerTran
   };
 }
 
-export function equipItem(state: PlayerState, itemId: string | null): PlayerTransition {
-  if (itemId !== null && !state.inventory.some(item => inventoryItemId(item) === itemId)) {
+export function equipItem(state: PlayerState, itemId: string | null, slot?: Equipment['slot']): PlayerTransition {
+  const item = state.inventory.find(item => inventoryItemId(item) === itemId);
+  if (itemId !== null && !item) {
     throw new Error('Cannot equip equipment that is not owned.');
   }
-  if (state.equippedItemId === itemId) return { state, duplicate: true, reward: null };
+  if (slot !== undefined && slot !== 'boots' && slot !== 'glider') throw new Error('Invalid equipment slot.');
+  if (item && slot !== undefined && item.slot !== slot) throw new Error('Item does not fit that equipment slot.');
+  // Older clients sent null without a slot to unequip their single selection.
+  const equippedItems = item ? { ...state.equippedItems, [item.slot]: itemId }
+    : slot ? { ...state.equippedItems, [slot]: null } : { boots: null, glider: null };
+  if (equippedItems.boots === state.equippedItems.boots && equippedItems.glider === state.equippedItems.glider) {
+    return { state, duplicate: true, reward: null };
+  }
   return {
-    state: { ...state, revision: increment(state.revision, 1), equippedItemId: itemId },
+    state: { ...state, revision: increment(state.revision, 1), equippedItems },
     duplicate: false,
     reward: null,
   };
@@ -188,7 +214,7 @@ export function buyItem(state: PlayerState, itemId: string): PlayerTransition {
       revision,
       coins: increment(state.coins, -offer.price),
       inventory: [...state.inventory, item],
-      equippedItemId: state.equippedItemId ?? item.instanceId,
+      equippedItems: { ...state.equippedItems, [item.slot]: state.equippedItems[item.slot] ?? item.instanceId },
     },
     duplicate: false,
     reward: item,
@@ -204,7 +230,7 @@ export function sellItem(state: PlayerState, itemId: string): PlayerTransition {
       revision: increment(state.revision, 1),
       coins: increment(state.coins, sellValue(item)),
       inventory: state.inventory.filter(candidate => inventoryItemId(candidate) !== itemId),
-      equippedItemId: state.equippedItemId === itemId ? null : state.equippedItemId,
+      equippedItems: { ...state.equippedItems, [item.slot]: state.equippedItems[item.slot] === itemId ? null : state.equippedItems[item.slot] },
     },
     duplicate: false,
     reward: null,
