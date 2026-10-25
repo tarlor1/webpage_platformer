@@ -1,4 +1,4 @@
-# Steel & Steam
+# Tabventure
 
 A Chrome extension that turns a webpage’s rendered text, controls, and images into a small Canvas 2D platformer. Terrain comes only from the original webpage, including moving DOM elements; the extension adds no bridges, stepping stones, or artificial floor.
 
@@ -18,7 +18,7 @@ bun run build
 1. Open `chrome://extensions` in Chrome or Chromium.
 2. Enable **Developer mode**.
 3. Click **Load unpacked** and select this project’s **`dist` directory**, not the project root.
-4. Pin **Steel & Steam** using Chrome’s extensions menu.
+4. Pin **Tabventure** using Chrome’s extensions menu.
 5. Open `https://www.google.com/`, click the extension, and choose **Start platforming**.
 6. Close the popup and click **Focus game** in the bottom-right HUD if gameplay is paused.
 

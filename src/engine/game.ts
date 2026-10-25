@@ -169,7 +169,7 @@ export class Game {
       .shop-close{position:absolute;right:12px;top:10px;width:auto;padding:4px 10px;font-size:22px;line-height:1}
       .shop-offers{display:grid;gap:8px;margin:18px 0}.shop-offer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border:1px solid #596971;border-radius:5px;background:#15212b}.shop-offer span{min-width:0}.shop-sell h3{margin:18px 0 8px;color:#f5cb7d}.shop-message{color:#ffbeb1;min-height:1.5em}
       [hidden]{display:none!important}
-    </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Steel and Steam platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Steel and Steam controls"><strong>STEEL &amp; STEAM</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
+    </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Tabventure platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Tabventure controls"><strong>TABVENTURE</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
     const shopModal = document.createElement('div');
     shopModal.className = 'shop-modal';
     shopModal.hidden = true;
@@ -186,7 +186,6 @@ export class Game {
     this.detail = shadow.querySelector('pre')!;
     this.shopModal = shadow.querySelector('.shop-modal')!;
     const shopDialog = this.shopModal.querySelector<HTMLElement>('.shop-dialog')!;
-    shadow.querySelector('strong')!.append(` · ${chrome.runtime.getManifest().version}`);
     this.materialStatus = document.createElement('p');
     this.materialStatus.className = 'material-status';
     shadow.querySelector('nav')!.before(this.materialStatus);
