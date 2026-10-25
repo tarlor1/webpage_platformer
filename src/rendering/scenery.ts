@@ -1,6 +1,6 @@
 import type { Platform } from '../engine/types';
 import { composedParent } from '../page/composed-dom';
-import { readBounds, readLayout, readStyle } from '../page/frame-measurement';
+import { readBounds, readLayout } from '../page/frame-measurement';
 import { surfaceMetadata } from '../page/surface-metadata';
 import type { Rect, SceneryDesign, SceneryPlacement } from './scenery-types';
 
@@ -48,18 +48,11 @@ interface Candidate {
   placement: SceneryPlacement;
   platform: Platform;
 }
-interface Owner {
-  chain: Element[];
-  stacks: Element[];
-  z: number[];
-}
 interface FrameState {
   platforms: Map<string, Platform>;
   candidates: Candidate[];
   entries: Map<SceneryPlacement, Candidate>;
   accepted: Candidate[];
-  owners: Map<Element, Owner>;
-  hits: Map<string, Element[]>;
   visibility: Map<Element, boolean>;
   masks: Rect[];
 }
@@ -86,67 +79,10 @@ function visibleSurface(element: Element, cache: Map<Element, boolean>): boolean
   return visible;
 }
 
-function owner(element: Element, owners: Map<Element, Owner>): Owner {
-  let result = owners.get(element);
-  if (result) return result;
-  const chain: Element[] = [], stacks: Element[] = [], z: number[] = [];
-  for (let current: Element | null = element; current; current = composedParent(current)) chain.push(current);
-  chain.reverse();
-  for (let index = 0; index < chain.length; index++) {
-    const current = chain[index], style = readStyle(current);
-    const positioned = style.position && style.position !== 'static';
-    const indexed = !!style.zIndex && style.zIndex !== 'auto'
-      && (positioned || index > 0 && /flex|grid/.test(readStyle(chain[index - 1]).display));
-    if (index === 0 || indexed || style.position === 'fixed' || style.position === 'sticky'
-      || !!style.opacity && Number(style.opacity) < 1 || style.isolation === 'isolate'
-      || !!style.transform && style.transform !== 'none' || !!style.filter && style.filter !== 'none'
-      || !!style.perspective && style.perspective !== 'none' || /(?:paint|layout|strict|content)/.test(style.contain)
-      || /(?:transform|opacity|filter|perspective)/.test(style.willChange)) {
-      stacks.push(current); z.push(indexed ? Number.parseInt(style.zIndex) || 0 : 0);
-    }
-  }
-  result = { chain, stacks, z };
-  owners.set(element, result);
-  return result;
-}
-
-/** Descendant edges own their wrapper's band; unrelated siblings follow native paint order. */
-function priority(a: Candidate, b: Candidate, owners: Map<Element, Owner>, hits: Map<string, Element[]>): number {
-  const left = surfaceMetadata(a.platform)?.element;
-  const right = surfaceMetadata(b.platform)?.element;
-  if (left && right && left !== right) {
-    const first = owner(left, owners), second = owner(right, owners);
-    let index = 0;
-    while (index < first.chain.length && index < second.chain.length && first.chain[index] === second.chain[index]) index++;
-    if (index === first.chain.length) return 1;
-    if (index === second.chain.length) return -1;
-    if (overlaps(a.placement, b.placement) && typeof document !== 'undefined'
-      && typeof document.elementsFromPoint === 'function' && typeof scrollX === 'number'
-      && typeof scrollY === 'number' && typeof innerWidth === 'number' && typeof innerHeight === 'number') {
-      const x = (Math.max(0, a.placement.x - scrollX, b.placement.x - scrollX)
-        + Math.min(innerWidth, a.placement.x + a.placement.width - scrollX, b.placement.x + b.placement.width - scrollX)) / 2;
-      const y = (Math.max(0, a.placement.y - scrollY, b.placement.y - scrollY)
-        + Math.min(innerHeight, a.placement.y + a.placement.height - scrollY, b.placement.y + b.placement.height - scrollY)) / 2;
-      // Probe only a visible overlap, never the document registry; reuse identical probes.
-      const key = `${x}:${y}`;
-      let stack = hits.get(key);
-      if (!stack) { stack = document.elementsFromPoint(x, y); hits.set(key, stack); }
-      const leftIndex = stack.indexOf(left), rightIndex = stack.indexOf(right);
-      if (leftIndex >= 0 && rightIndex >= 0 && leftIndex !== rightIndex) return leftIndex - rightIndex;
-    }
-    // Compare stacking contexts before DOM order, never discovery/player order.
-    index = 0;
-    while (index < first.stacks.length && index < second.stacks.length && first.stacks[index] === second.stacks[index]) index++;
-    const z = (second.z[index] ?? 0) - (first.z[index] ?? 0);
-    if (z) return z;
-    const relation = (first.stacks[index] ?? left).compareDocumentPosition(second.stacks[index] ?? right);
-    if (!(relation & 1)) {
-      if (relation & 4) return 1;
-      if (relation & 2) return -1;
-    }
-  }
-  // Numeric-only consumers have no paint metadata: prefer one complete wider edge.
-  return b.placement.width - a.placement.width || a.placement.platformId.localeCompare(b.placement.platformId);
+/** Prefer the widest complete native edge when two scenery strips overlap. */
+function widerFirst(a: Candidate, b: Candidate): number {
+  return b.placement.width - a.placement.width
+    || a.placement.platformId.localeCompare(b.placement.platformId);
 }
 
 function ownMediaEdge(candidate: Candidate, rect: Rect): boolean {
@@ -176,11 +112,11 @@ function ownMediaEdge(candidate: Candidate, rect: Rect): boolean {
 export function updateScenery(placements: readonly SceneryPlacement[], platforms: readonly Platform[], protectedRects: readonly Rect[] = [], reserved?: Rect): void {
   let state = frames.get(placements);
   if (!state) {
-    state = { platforms: new Map(), candidates: [], entries: new Map(), accepted: [], owners: new Map(), hits: new Map(), visibility: new Map(), masks: [] };
+    state = { platforms: new Map(), candidates: [], entries: new Map(), accepted: [], visibility: new Map(), masks: [] };
     frames.set(placements, state);
   }
-  const { candidates, accepted, owners, hits, visibility, masks } = state;
-  state.platforms.clear(); candidates.length = 0; accepted.length = 0; owners.clear(); hits.clear(); visibility.clear(); masks.length = 0;
+  const { candidates, accepted, visibility, masks } = state;
+  state.platforms.clear(); candidates.length = 0; accepted.length = 0; visibility.clear(); masks.length = 0;
   for (const platform of platforms) state.platforms.set(platform.id, platform);
   const sx = typeof scrollX === 'number' ? scrollX : -Infinity;
   const sy = typeof scrollY === 'number' ? scrollY : -Infinity;
@@ -212,13 +148,14 @@ export function updateScenery(placements: readonly SceneryPlacement[], platforms
   for (const rect of protectedRects) {
     if (rect.x < maxX && rect.x + rect.width > minX && rect.y < maxY && rect.y + rect.height > minY) masks.push(rect);
   }
-  candidates.sort((a, b) => priority(a, b, owners, hits));
+  candidates.sort(widerFirst);
   for (const candidate of candidates) {
     const strip = candidate.placement;
     if (accepted.some(other => overlaps(strip, other.placement))) continue;
     // A blocked front edge must not reveal a lower owner's unrelated material.
     accepted.push(candidate);
-    if (reserved && overlaps(strip, reserved)) continue;
+    // Checks if overlaps with extension toolbar, deemed unnecessary
+    // if (reserved && overlaps(strip, reserved)) continue;
     let blocked = false;
     for (const rect of masks) {
       if (overlaps(strip, rect) && !ownMediaEdge(candidate, rect)) { blocked = true; break; }

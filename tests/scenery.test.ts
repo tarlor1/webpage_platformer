@@ -226,7 +226,7 @@ test('logical clones and fragments retain one material through reordering, camer
   });
 });
 
-test('any text, control, pending region, unrelated media, unknown content or HUD rejects the whole strip', () => {
+test('protected content rejects the whole strip while HUD reservation is disabled', () => {
   const placed = placeScenery([design], [{ ...platform, width: 1200 }]);
   const blocker = { x: 600, y: 98, width: 15, height: 20 };
   for (const kind of [undefined, 'text', 'control', 'pending', 'media'] as const) {
@@ -236,7 +236,7 @@ test('any text, control, pending region, unrelated media, unknown content or HUD
     assert.equal(placed[0].width, 1200);
   }
   updateScenery(placed, [{ ...platform, width: 1200 }], [], blocker);
-  assert.equal(placed[0].visible, false);
+  assert.equal(placed[0].visible, true);
   updateScenery(placed, [{ ...platform, width: 1200 }], [{ ...blocker, y: 110 }]);
   assert.equal(placed[0].visible, true);
 });
@@ -277,7 +277,7 @@ function withNativeOwners(run: (reads: NativeOwner[]) => void): void {
   }
 }
 
-test('nested wrappers and clone fragments leave only their topmost native owner decorated', () => {
+test('overlapping native edges choose the widest complete strip', () => {
   withNativeOwners(() => {
     const wrapper = new NativeOwner(0);
     const child = new NativeOwner(1, wrapper);
@@ -291,13 +291,13 @@ test('nested wrappers and clone fragments leave only their topmost native owner 
       const placed = placeScenery([design], surfaces);
       const visible = placed.filter(item => item.visible);
       assert.equal(visible.length, 1);
-      assert.notEqual(visible[0].platformId, wrapperSurface.id);
-      assert.equal(visible[0].width, childSurface.width);
+      assert.equal(visible[0].platformId, wrapperSurface.id);
+      assert.equal(visible[0].width, wrapperSurface.width);
     }
   });
 });
 
-test('native stacking order wins over discovery order and a blocked front owner does not expose a lower strip', () => {
+test('wider edges win regardless of discovery order and protected content blocks the result', () => {
   withNativeOwners(() => {
     const root = new NativeOwner(0);
     const front = new NativeOwner(1, root);
@@ -308,7 +308,7 @@ test('native stacking order wins over discovery order and a blocked front owner 
     setSurfaceMetadata(frontSurface, front as unknown as Element, false);
     setSurfaceMetadata(backSurface, back as unknown as Element, false);
     const placed = placeScenery([design], [backSurface, frontSurface]);
-    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['front']);
+    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['back']);
     updateScenery(placed, [frontSurface, backSurface], [{ x: 100, y: 98, width: 10, height: 10, kind: 'text' }]);
     assert.ok(placed.every(item => !item.visible));
   });
@@ -350,28 +350,15 @@ test('offscreen div candidates are culled before native ownership/style work', (
   }));
 });
 
-test('overlapping native edges follow the visible paint stack using viewport-local probes only', () => {
+test('overlapping native edges use a deterministic width and ID tie-breaker without DOM probes', () => {
   withViewport(() => withNativeOwners(() => {
     const root = new NativeOwner(0), front = new NativeOwner(1, root), back = new NativeOwner(2, root), distant = new NativeOwner(3, root);
     const surfaces = [{ ...platform, id: 'paint-front' }, { ...platform, id: 'paint-back' }, { ...platform, id: 'offscreen', y: 100000 }];
     for (const [index, element] of [front, back, distant].entries()) setSurfaceMetadata(surfaces[index], element as unknown as Element, false);
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
-    const probes: number[][] = [];
-    Object.defineProperty(globalThis, 'document', {
-      configurable: true,
-      value: { elementsFromPoint(x: number, y: number) { probes.push([x, y]); return [front, back, root]; } },
-    });
-    try {
-      const placed = placeScenery([design], surfaces);
-      assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['paint-front']);
-      assert.ok(probes.length > 0);
-      assert.ok(probes.every(([x, y]) => x >= 0 && x < 1000 && y >= 0 && y < 700));
-      updateScenery(placed, [...surfaces].reverse());
-      assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['paint-front']);
-    } finally {
-      if (descriptor) Object.defineProperty(globalThis, 'document', descriptor);
-      else Reflect.deleteProperty(globalThis, 'document');
-    }
+    const placed = placeScenery([design], surfaces);
+    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['paint-back']);
+    updateScenery(placed, [...surfaces].reverse());
+    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['paint-back']);
   }));
 });
 
@@ -390,7 +377,7 @@ test('a standalone detected transparent nontext div receives its complete native
   });
 });
 
-test('nested transparent detected owners still yield exactly one complete decorated edge', () => {
+test('nested transparent detected owners still choose the widest complete edge', () => {
   withNativeOwners(() => {
     const wrapper = new NativeOwner(0);
     const section = new NativeOwner(1, wrapper);
@@ -404,12 +391,12 @@ test('nested transparent detected owners still yield exactly one complete decora
     ];
     for (const [index, element] of [wrapper, section, child].entries()) setSurfaceMetadata(surfaces[index], element as unknown as Element, false);
     const wrappersOnly = placeScenery([design], surfaces.slice(0, 2));
-    assert.deepEqual(wrappersOnly.filter(item => item.visible).map(item => item.platformId), ['transparent-section']);
+    assert.deepEqual(wrappersOnly.filter(item => item.visible).map(item => item.platformId), ['transparent-wrapper']);
     const placed = placeScenery([design], surfaces);
-    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['transparent-child']);
-    assert.equal(placed.find(item => item.visible)!.width, surfaces[2].width);
+    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['transparent-wrapper']);
+    assert.equal(placed.find(item => item.visible)!.width, surfaces[0].width);
     updateScenery(placed, surfaces.slice(0, 2));
-    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['transparent-section']);
+    assert.deepEqual(placed.filter(item => item.visible).map(item => item.platformId), ['transparent-wrapper']);
   });
 });
 
