@@ -42,6 +42,8 @@ export class Game {
   private clearance?: TextClearance;
   private designs: SceneryDesign[] = [];
   private scenery: SceneryScene = { placements: [], protectedRects: [], ready: false };
+  private shopModal?: HTMLElement;
+  private shopOpen = false;
   private decorationRevision = -1;
   private protectedRectsRevision = -1;
   private levelRevision = -1;
@@ -107,6 +109,8 @@ export class Game {
     this.resetLoot();
     this.decorationRevision = this.levelRevision = this.rootRevision = -1;
     this.protectedRectsRevision = -1;
+    this.scenery.shopkeeper = undefined;
+    this.shopOpen = false;
     this.changes.clear();
     this.styleChanges.clear();
     this.observedRoots.clear();
@@ -152,14 +156,28 @@ export class Game {
       section.dragging{will-change:transform}
       .panel-drag strong{font-size:11px;letter-spacing:.04em}
       .panel-toggle{flex:none;font-size:18px;line-height:1;padding:4px 7px}
+      .shop-modal{position:absolute;inset:0;z-index:3;pointer-events:auto}
+      .shop-backdrop{position:absolute;inset:0;background:#071016b8}
+      .shop-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));height:min(520px,calc(100vh - 40px));padding:28px;border:3px solid #bc8c43;border-radius:10px;background:#1b2933;color:#f1e5ce;box-shadow:0 8px 36px #000a;font:16px/1.5 system-ui,sans-serif}
+      .shop-dialog h2{margin:0 0 10px;color:#f5cb7d}
+      .shop-close{position:absolute;right:12px;top:10px;width:auto;padding:4px 10px;font-size:22px;line-height:1}
       [hidden]{display:none!important}
     </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Steel and Steam platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Steel and Steam controls"><strong>STEEL &amp; STEAM</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
+    const shopModal = document.createElement('div');
+    shopModal.className = 'shop-modal';
+    shopModal.hidden = true;
+    shopModal.setAttribute('role', 'dialog');
+    shopModal.setAttribute('aria-modal', 'true');
+    shopModal.setAttribute('aria-labelledby', 'shop-title');
+    shopModal.innerHTML = '<div class="shop-backdrop"></div><section class="shop-dialog"><button class="shop-close" type="button" aria-label="Close shop">×</button><h2 id="shop-title">Merchant\'s train</h2><p>Welcome aboard. The shop is still being stocked.</p></section>';
+    shadow.append(shopModal);
     document.documentElement.append(host);
     this.host = host;
     this.canvas = shadow.querySelector('canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
     this.status = shadow.querySelector('.status')!;
     this.detail = shadow.querySelector('pre')!;
+    this.shopModal = shadow.querySelector('.shop-modal')!;
     shadow.querySelector('strong')!.append(` · ${chrome.runtime.getManifest().version}`);
     this.materialStatus = document.createElement('p');
     this.materialStatus.className = 'material-status';
@@ -183,6 +201,8 @@ export class Game {
     this.surface = shadow.querySelector('.surface')!;
     const focus = () => this.surface!.focus({ preventScroll: true });
     mountMovablePanel(shadow.querySelector('section')!, signal, focus);
+    const controlHint = shadow.querySelector<HTMLElement>('section p:nth-of-type(2)');
+    if (controlHint) controlHint.innerHTML = 'Arrows / A D move · Space / W jump<br>Down / S drop · E talk to merchant · B debug · Esc stop';
     shadow.querySelector('.focus')!.addEventListener('click', focus, { signal });
     const locate = document.createElement('button');
     locate.type = 'button';
@@ -196,9 +216,14 @@ export class Game {
     shadow.querySelector('.debug')!.addEventListener('click', () => { this.toggleDebug(); focus(); }, { signal });
     shadow.querySelector('.respawn')!.addEventListener('click', () => { this.respawn(); focus(); }, { signal });
     shadow.querySelector('.stop')!.addEventListener('click', () => this.stop(), { signal });
+    shadow.querySelector('.shop-close')!.addEventListener('click', () => this.closeShop(), { signal });
     // Input uses the shadow host as document.activeElement while the game surface is focused.
     this.input = new Input(host, () => this.stop(), () => this.toggleDebug());
-    document.addEventListener('keydown', e => { if (e.code === 'Escape') this.stop(); }, { signal });
+    document.addEventListener('keydown', e => {
+      if (e.code !== 'Escape') return;
+      if (this.shopOpen) { e.preventDefault(); this.closeShop(); }
+      else this.stop();
+    }, { signal });
     window.addEventListener('resize', this.layoutChanged, { signal });
     window.addEventListener('scroll', this.scrolled, { signal, passive: true, capture: true });
     window.addEventListener('load', this.contentLoaded, { signal, capture: true });
@@ -443,7 +468,13 @@ export class Game {
       this.scenery.placements = placeScenery(this.designs, this.geometry!.registryPlatforms, this.scenery.placements);
       this.decorationRevision = this.geometry!.registryRevision;
     }
+    this.configureShopkeeperPlacement();
     updateScenery(this.scenery.placements, this.geometry!.registryPlatforms, this.scenery.protectedRects, this.scenery.reserved);
+    if (!this.scenery.shopkeeper) this.chooseShopkeeper();
+    if (this.scenery.shopkeeper) {
+      this.configureShopkeeperPlacement();
+      updateScenery(this.scenery.placements, this.geometry!.registryPlatforms, this.scenery.protectedRects, this.scenery.reserved);
+    }
     if (this.pickupRevision !== this.geometry!.registryRevision) this.refreshPickups(false);
     else updatePickups(this.pickups, this.rewardPlatforms);
     this.pickupIndex.update(this.pickups);
@@ -452,6 +483,59 @@ export class Game {
     this.viewportBounds.width = innerWidth;
     this.viewportBounds.height = innerHeight;
     this.pickupIndex.query(this.viewportBounds, this.visiblePickups);
+  }
+
+  private configureShopkeeperPlacement(): void {
+    const shopkeeper = this.scenery.shopkeeper;
+    if (!shopkeeper) return;
+    const placement = this.scenery.placements.find(item => item.platformId === shopkeeper.placementId);
+    if (!placement) return;
+    const rail = this.designs.find(design => design.kind === 'rail');
+    if (rail) placement.design = rail;
+    placement.width = Math.max(placement.width, 32);
+    placement.height = placement.design.height;
+    const platform = this.geometry?.registryPlatforms.find(item => item.id === placement.platformId);
+    if (platform) placement.y = platform.y - placement.height / 2;
+  }
+
+  private chooseShopkeeper(): void {
+    const firstThreeViewports = scrollY + innerHeight * 3;
+    const candidates = this.scenery.placements
+      .filter(placement => placement.visible
+        && placement.y + placement.height >= scrollY
+        && placement.y <= firstThreeViewports)
+      .sort((a, b) => a.platformId.localeCompare(b.platformId));
+    if (!candidates.length) return;
+    let seed = 2166136261;
+    for (const character of location.href) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619);
+    const placement = candidates[(seed >>> 0) % candidates.length]!;
+    this.scenery.shopkeeper = { placementId: placement.platformId };
+    this.configureShopkeeperPlacement();
+  }
+
+  private nearShopkeeper(): boolean {
+    const shopkeeper = this.scenery.shopkeeper;
+    const player = this.player;
+    if (!shopkeeper || !player) return false;
+    const placement = this.scenery.placements.find(item => item.platformId === shopkeeper.placementId);
+    if (!placement?.visible) return false;
+    const platformY = placement.y + placement.height / 2;
+    return Math.abs(player.x + player.width / 2 - (placement.x + 8)) <= 42
+      && Math.abs(player.y + player.height - platformY) <= 42;
+  }
+
+  private openShop(): void {
+    if (!this.shopModal) return;
+    this.shopOpen = true;
+    this.shopModal.hidden = false;
+    this.shopModal.querySelector<HTMLButtonElement>('.shop-close')?.focus({ preventScroll: true });
+  }
+
+  private closeShop(): void {
+    if (!this.shopModal) return;
+    this.shopOpen = false;
+    this.shopModal.hidden = true;
+    this.surface?.focus({ preventScroll: true });
   }
 
   private acceptProgress(state: PlayerState, run: number): void {
@@ -574,6 +658,7 @@ export class Game {
       if (identityChanged) {
         this.designs = sceneryDesigns(location.href);
         this.scenery.placements.length = 0;
+        this.scenery.shopkeeper = undefined;
         this.resetLoot();
         this.decorationRevision = -1;
         this.refreshPickups();
@@ -594,6 +679,10 @@ export class Game {
     const elapsed = this.last ? Math.min((now - this.last) / 1000, 0.1) : 0;
     this.last = now;
     const input = this.input!, player = this.player!, level = this.level!;
+    if (input.interact) {
+      input.interact = false;
+      if (this.nearShopkeeper()) this.openShop();
+    }
     const previousY = player.y;
     if (input.focused && !this.stranded && !this.waitingForSpawn) {
       if (input.jump) this.jumpBuffer = 0.13;
@@ -695,8 +784,10 @@ export class Game {
     this.clearance?.clear();
     this.clearance = undefined;
     this.scenery.placements.length = 0;
+    this.scenery.shopkeeper = undefined;
     this.scenery.protectedRects = [];
     this.scenery.ready = false;
+    this.closeShop();
     this.designs = [];
     this.host?.remove();
     this.player = undefined;

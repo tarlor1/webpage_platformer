@@ -1,6 +1,7 @@
 import { pageSeedKey } from '../page/page-identity';
 import type { PageEncounter } from './progression-types';
 import type { Platform } from '../engine/types';
+import { surfaceMetadata } from '../page/surface-metadata';
 
 const VERSION = 2;
 const BOOT_NAMES = ['Springheel Boots', 'Skybound Boots', 'Piston Boots', 'Cloudstep Boots', 'Coppercoil Boots', 'Vaulting Boots'] as const;
@@ -62,6 +63,9 @@ function startedEncounter(encounter: PageEncounter, collected?: ReadonlySet<stri
 
 /** Geometry gates eligibility, never the identity, reward count, or gear roll. */
 export function eligibleLootPlatform(platform: Platform): boolean {
+  const source = surfaceMetadata(platform)?.element;
+  // Video interiors remain walkable, but never receive generated loot.
+  if (source && (source.tagName.toUpperCase() === 'VIDEO' || source.querySelector('video'))) return false;
   return validLogicalKey(platform.logicalKey) && Number.isFinite(platform.x)
     && Number.isFinite(platform.y) && Number.isFinite(platform.width) && platform.width >= 6;
 }

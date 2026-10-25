@@ -3,9 +3,10 @@ export class Input {
   right = false;
   jump = false;
   drop = false;
+  interact = false;
   private abort = new AbortController();
   constructor(private surface: HTMLElement, stop: () => void, debug: () => void) {
-    const codes: Record<string, true> = { ArrowLeft: true, ArrowRight: true, ArrowUp: true, ArrowDown: true, KeyA: true, KeyD: true, KeyW: true, KeyS: true, Space: true, KeyB: true };
+    const codes: Record<string, true> = { ArrowLeft: true, ArrowRight: true, ArrowUp: true, ArrowDown: true, KeyA: true, KeyD: true, KeyW: true, KeyS: true, Space: true, KeyB: true, KeyE: true };
     const signal = this.abort.signal;
     window.addEventListener('keydown', e => {
       // Escape is reserved only while the game surface owns keyboard focus.
@@ -18,6 +19,7 @@ export class Input {
       if (!e.repeat && ['Space', 'KeyW', 'ArrowUp'].includes(e.code)) this.jump = true;
       if (!e.repeat && (e.code === 'ArrowDown' || e.code === 'KeyS')) this.drop = true;
       if (!e.repeat && e.code === 'KeyB') debug();
+      if (!e.repeat && e.code === 'KeyE') this.interact = true;
     }, { signal, capture: true });
     window.addEventListener('keyup', e => {
       if (e.code === 'KeyA' || e.code === 'ArrowLeft') this.left = false;
@@ -30,6 +32,6 @@ export class Input {
     return document.activeElement === this.surface && !document.hidden && document.hasFocus()
       && this.surface.shadowRoot?.activeElement?.classList.contains('surface') === true;
   }
-  clear(): void { this.left = this.right = this.jump = this.drop = false; }
+  clear(): void { this.left = this.right = this.jump = this.drop = this.interact = false; }
   dispose(): void { this.abort.abort(); this.clear(); }
 }

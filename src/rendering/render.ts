@@ -7,6 +7,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   ctx.save(); ctx.translate(-sx, -sy);
   if (scenery.ready) drawScenery(ctx, scenery.placements);
+  drawShopkeeper(ctx, scenery);
   for (const pickup of pickups) {
     if (!pickup.available || collected.has(pickup.id)) continue;
     if (pickup.kind === 'equipment') {
@@ -75,5 +76,27 @@ export function drawWorld(ctx: CanvasRenderingContext2D, level: Level, player: B
   ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + (facing > 0 ? 11 : 3), y + 4, 8, 5);
   ctx.fillStyle = jumpBoots ? '#9bbfc8' : '#d3a159'; ctx.fillRect(x + 1, y + h - 5, 8, 5); ctx.fillRect(x + w - 9, y + h - 5, 8, 5);
   if (debug) { ctx.strokeStyle = '#e04467'; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h); }
+  ctx.restore();
+}
+
+function drawShopkeeper(ctx: CanvasRenderingContext2D, scenery: SceneryScene): void {
+  if (!scenery.ready) return;
+  const shopkeeper = scenery.shopkeeper;
+  if (!shopkeeper) return;
+  const placement = scenery.placements.find(item => item.platformId === shopkeeper.placementId);
+  if (!placement?.visible) return;
+  const base = placement.y + placement.height / 2;
+  const x = placement.x;
+  const y = base - 16;
+  ctx.save();
+  // Two 16x16 train sprites: a front engine with the merchant and an attached car.
+  ctx.fillStyle = '#344953'; ctx.fillRect(x, y, 16, 16);
+  ctx.fillStyle = '#ad874e'; ctx.fillRect(x + 16, y, 16, 16);
+  ctx.fillStyle = '#18262d'; ctx.fillRect(x + 2, y + 9, 28, 4);
+  ctx.fillStyle = '#e7b24f'; ctx.fillRect(x + 4, y + 2, 7, 6);
+  ctx.fillStyle = '#202f39'; ctx.fillRect(x + 3, y - 3, 9, 4);
+  ctx.fillStyle = '#18262d';
+  ctx.beginPath(); ctx.arc(x + 4, y + 16, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 26, y + 16, 2, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
