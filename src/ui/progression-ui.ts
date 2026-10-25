@@ -162,7 +162,7 @@ export function mountProgressionUI(
       : `Discovered platforms: ${encounters.length} · loading saved coin progress…`);
     setText(summary, state ? `Inventory (${state.inventory.length})` : 'Inventory');
     setText(empty, state
-      ? 'Rare jump boots appear on about 1% of platforms. Find and pick up the boot icon; coins do not unlock equipment.'
+      ? 'Rare jump boots appear on about 0.25% of platforms. Find and pick up the boot icon; coins do not unlock equipment. Gliders are sold by the merchant.'
       : 'Loading saved inventory…');
     empty.hidden = !!state?.inventory.length;
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { coinId, encounterForPlatform } from '../src/progression/encounters';
-import { collectCoin, collectEquipment, createPlayerState, equipItem, readPlayerState } from '../src/progression/player-state';
+import { buyItem, collectCoin, collectEquipment, createPlayerState, equipItem, readPlayerState, sellItem } from '../src/progression/player-state';
 import type { PlayerState } from '../src/progression/progression-types';
 
 const PAGE = 'https://example.com/article';
@@ -90,6 +90,31 @@ test('equipment can be picked up with zero coins and is claimed once independent
   const beforeCoins = completePlatform(rareKey, result.state);
   const afterCoins = collectEquipment(completePlatform(rareKey), ownership).state;
   assert.deepEqual(beforeCoins, afterCoins);
+});
+
+test('shop sells a glider, equips the first purchase, and resells it for less', () => {
+  const purchased = buyItem({ ...createPlayerState(), coins: 25 }, 'shop:glider').state;
+  assert.equal(purchased.coins, 5);
+  assert.equal(purchased.inventory[0]!.ability, 'glide');
+  assert.equal(purchased.equippedItemId, 'shop:glider');
+  assert.deepEqual(readPlayerState(purchased), purchased);
+  const sold = sellItem(purchased, 'shop:glider').state;
+  assert.equal(sold.coins, 15);
+  assert.deepEqual(sold.inventory, []);
+  assert.equal(sold.equippedItemId, null);
+});
+
+test('shop boots can be bought when a different pair is already owned', () => {
+  const existing = {
+    id: 'encounter:other-boots', name: 'Skybound Boots', slot: 'boots' as const, rarity: 'rare' as const,
+    jumpMultiplier: 1.15, description: 'A different pair.',
+  };
+  const state = { ...createPlayerState(), coins: 20, inventory: [existing] };
+  const purchased = buyItem(state, 'shop:boots').state;
+  assert.equal(purchased.coins, 8);
+  assert.deepEqual(purchased.inventory.map(item => item.id), ['encounter:other-boots', 'shop:boots']);
+  assert.deepEqual(readPlayerState(purchased), purchased);
+  assert.throws(() => buyItem({ ...purchased, coins: 100 }, 'shop:boots'), /already own that item/);
 });
 
 test('a new logical key and a new meaningful URL each permit distinct coin sets on old pages', () => {

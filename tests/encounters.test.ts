@@ -99,7 +99,7 @@ test('3–7 coin sets and approximately one-percent equipment rolls vary by plat
     }
   }
   assert.deepEqual([...counts].sort(), [3, 4, 5, 6, 7]);
-  assert.ok(gear > 50 && gear < 160, `expected about 1% rare platforms, received ${gear}/10000`);
+  assert.ok(gear > 10 && gear < 45, `expected about 0.25% rare platforms, received ${gear}/10000`);
   assert.ok(appearances.size > 10);
 });
 

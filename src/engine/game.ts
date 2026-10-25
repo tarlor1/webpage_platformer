@@ -15,6 +15,7 @@ import { PickupIndex, planPickups, updatePickups } from '../progression/collecti
 import { requestProgression } from '../progression/progression-client';
 import { mountProgressionUI, type ProgressionPanel } from '../ui/progression-ui';
 import { mountMovablePanel } from '../ui/movable-panel';
+import { mountShopUI, type ShopPanel } from '../ui/shop-ui';
 import { EQUIPMENT_STORAGE_PREFIX, PLAYER_STORAGE_KEY, type EquipmentOwnership, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
 import { beginMeasurements, readBounds } from '../page/frame-measurement';
 import { composedParent } from '../page/composed-dom';
@@ -44,6 +45,8 @@ export class Game {
   private scenery: SceneryScene = { placements: [], protectedRects: [], ready: false };
   private shopModal?: HTMLElement;
   private shopOpen = false;
+  private shopPanel?: ShopPanel;
+  private gliderEquipped = false;
   private decorationRevision = -1;
   private protectedRectsRevision = -1;
   private levelRevision = -1;
@@ -111,6 +114,7 @@ export class Game {
     this.protectedRectsRevision = -1;
     this.scenery.shopkeeper = undefined;
     this.shopOpen = false;
+    this.gliderEquipped = false;
     this.changes.clear();
     this.styleChanges.clear();
     this.observedRoots.clear();
@@ -161,6 +165,7 @@ export class Game {
       .shop-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));height:min(520px,calc(100vh - 40px));padding:28px;border:3px solid #bc8c43;border-radius:10px;background:#1b2933;color:#f1e5ce;box-shadow:0 8px 36px #000a;font:16px/1.5 system-ui,sans-serif}
       .shop-dialog h2{margin:0 0 10px;color:#f5cb7d}
       .shop-close{position:absolute;right:12px;top:10px;width:auto;padding:4px 10px;font-size:22px;line-height:1}
+      .shop-offers{display:grid;gap:8px;margin:18px 0}.shop-offer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border:1px solid #596971;border-radius:5px;background:#15212b}.shop-offer span{min-width:0}.shop-sell h3{margin:18px 0 8px;color:#f5cb7d}.shop-message{color:#ffbeb1;min-height:1.5em}
       [hidden]{display:none!important}
     </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Steel and Steam platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Steel and Steam controls"><strong>STEEL &amp; STEAM</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
     const shopModal = document.createElement('div');
@@ -178,6 +183,7 @@ export class Game {
     this.status = shadow.querySelector('.status')!;
     this.detail = shadow.querySelector('pre')!;
     this.shopModal = shadow.querySelector('.shop-modal')!;
+    const shopDialog = this.shopModal.querySelector<HTMLElement>('.shop-dialog')!;
     shadow.querySelector('strong')!.append(` · ${chrome.runtime.getManifest().version}`);
     this.materialStatus = document.createElement('p');
     this.materialStatus.className = 'material-status';
@@ -189,6 +195,10 @@ export class Game {
       },
     });
     this.progressionPanel.update(null, this.encounters);
+    this.shopPanel = mountShopUI(shopDialog, {
+      buy: async itemId => this.acceptProgress(await requestProgression({ type: 'progress:buy', itemId }), run),
+      sell: async itemId => this.acceptProgress(await requestProgression({ type: 'progress:sell', itemId }), run),
+    });
     const storageChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area === 'local' && changes[PLAYER_STORAGE_KEY]?.newValue) {
         this.acceptProgress(changes[PLAYER_STORAGE_KEY].newValue as PlayerState, run);
@@ -549,9 +559,11 @@ export class Game {
     for (const item of state.inventory) this.pendingEquipment.delete(item.id);
     this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(item => item.id), ...this.pendingEquipment]);
     this.jumpMultiplier = state.inventory.find(item => item.id === state.equippedItemId)?.jumpMultiplier ?? 1;
+    this.gliderEquipped = state.inventory.some(item => item.id === state.equippedItemId && item.ability === 'glide');
     this.progressError = '';
     this.refreshPickups();
     this.progressionPanel?.update(state, this.encounters);
+    this.shopPanel?.update(state);
     this.progressPanelDirty = false;
   }
 
@@ -559,6 +571,7 @@ export class Game {
     if (!this.active || run !== this.run) return;
     this.progressError = error instanceof Error ? error.message : String(error);
     this.progressionPanel?.update(this.saved ?? null, this.encounters, this.progressError);
+    this.shopPanel?.update(this.saved ?? null, this.progressError);
   }
 
   private resetLoot(): void {
@@ -704,7 +717,7 @@ export class Game {
           player.grounded = false;
           this.coyote = this.jumpBuffer = 0;
         }
-        const gliding = input.jumpHeld && !player.grounded && player.vy >= 0;
+        const gliding = this.gliderEquipped && input.jumpHeld && !player.grounded && player.vy >= 0;
         stepBody(player, level.platforms, dt, index / steps, (index + 1) / steps, gliding);
         this.accumulator -= dt;
         this.collectPickups();
@@ -733,7 +746,7 @@ export class Game {
       }
       this.geometry!.commitMotion();
     }
-    const gliding = input.jumpHeld && !player.grounded && player.vy >= 0;
+    const gliding = this.gliderEquipped && input.jumpHeld && !player.grounded && player.vy >= 0;
     drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.visiblePickups, this.collected, this.jumpMultiplier > 1, gliding);
     drawPlayerLocator(this.ctx!, player, now - this.locatorStarted);
     if (now - this.lastHud > 100) {
@@ -768,6 +781,8 @@ export class Game {
     this.run++;
     this.progressionPanel?.dispose();
     this.progressionPanel = undefined;
+    this.shopPanel?.dispose();
+    this.shopPanel = undefined;
     this.resetLoot();
     this.saved = undefined;
     this.pendingEquipment.clear();

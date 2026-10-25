@@ -38,7 +38,7 @@ For development, `bun run watch` rebuilds TypeScript changes. After changing the
 | **Focus game** | Return keyboard control to the game |
 | **Find player** | Show a large arrow that shrinks toward the player, then fades; offscreen players are indicated at the viewport edge |
 | **Respawn** | Explicitly move to a currently visible original webpage surface |
-| **Inventory → Equip / Unequip** | Manage owned boots; inventory controls retain keyboard focus and pause gameplay |
+| **Inventory → Equip / Unequip** | Manage owned equipment; inventory controls retain keyboard focus and pause gameplay |
 | Escape, HUD **Stop**, or popup **Stop platforming** | Remove the game overlay |
 
 Only the focused game surface takes movement keys. Clicking inventory controls, a search box, a page link, or another webpage element pauses keyboard gameplay and airborne motion. Grounded riders still follow their moving DOM support. Window blur and hidden tabs pause gameplay too. Use **Focus game** to resume. Escape stops when the game owns focus; page controls may consume Escape, so the HUD Stop button is also available.
@@ -49,11 +49,13 @@ Grounded characters remain attached to their current original platform when scro
 
 ## Coins, levels, and rare equipment
 
-Deterministic seeding populates about **10% of ordinary logical platforms**, plus every rare equipment platform, with **3–7 coins per populated surface**. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins currently accumulate as a balance; there is no shop or spending mechanic.
+Deterministic seeding populates about **10% of ordinary logical platforms**, plus every rare equipment platform, with **3–7 coins per populated surface**. Each coin gives **1 coin and 20 XP**, once per player. Levels advance every 100 XP: `level = 1 + floor(XP / 100)`. Coins accumulate as a balance and can be spent at the merchant.
 
-Roughly **1% of logical platforms** carry rare, visible boots. Walk into them to own them, with no coin, completion, or level prerequisite. Completing a platform's coin set records encounter completion without awarding equipment. The URL and logical platform determine the coin count and equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
+Roughly **0.25% of logical platforms** carry rare, visible boots. Walk into them to own them, with no coin, completion, or level prerequisite. The merchant sells gliders; gliders never spawn in the world. Completing a platform's coin set records encounter completion without awarding equipment. The URL and logical platform determine the coin count and equipment identity, name, color, and attributes. Revisiting, rewrapping text, scrolling, or resizing does not reroll rewards. Every player can collect their own copy.
 
-Open **Inventory** in the HUD to see owned items, rarity, effects, and equipped status. **Equip** or **Unequip** saves immediately. One boots slot is active at a time, with no stacking. New boots increase jump velocity by a seeded **15–25%**, producing approximately **32–56% greater ideal jump height** at unchanged gravity. The effect applies to subsequent jumps; equipped boots also change the character's footwear color. Previously earned boots retain their attributes.
+Open **Inventory** in the HUD to see owned items, rarity, effects, and equipped status. **Equip** or **Unequip** saves immediately. One equipment item is active at a time. New boots increase jump velocity by a seeded **15–25%**, producing approximately **32–56% greater ideal jump height** at unchanged gravity. The effect applies to subsequent jumps; equipped boots also change the character's footwear color. Previously earned boots retain their attributes.
+
+The shopkeeper sells **Springheel Boots for 12 coins** and a **Pocket Glider for 20 coins**. Buying the first item equips it automatically; later purchases can be equipped from Inventory. The glider activates while descending when Space is held. Selling an item returns **6 coins for boots** or **10 coins for the glider**, below its purchase price.
 
 Pickups are registered across the discovered level and indexed in spatial buckets. Drawing queries every pickup intersecting the viewport, with no nearest-pickup drawing cap; collection uses a separate local query around the player's body. Moving the player does not hide otherwise visible pickups. Encounter definitions and seeded population decisions are cached during incremental discovery.
 

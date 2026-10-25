@@ -30,7 +30,7 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
   const id = `encounter-v${VERSION}:${JSON.stringify([seedKey, logicalKey])}`;
   const next = seededRandom(id);
   const coinCount = 3 + next() % 5;
-  const hasBoots = next() % 100 === 0;
+  const hasBoots = next() % 400 === 0;
   const name = BOOT_NAMES[next() % BOOT_NAMES.length]!;
   const jumpMultiplier = (115 + next() % 11) / 100;
   const color = BOOT_COLORS[next() % BOOT_COLORS.length]!;

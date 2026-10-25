@@ -1,10 +1,11 @@
 export interface Equipment {
   id: string;
   name: string;
-  slot: 'boots';
-  rarity: 'rare';
+  slot: 'boots' | 'glider';
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
   jumpMultiplier: number;
   description: string;
+  ability?: 'glide';
   color?: string;
 }
 export interface PlayerState {
@@ -54,7 +55,9 @@ export interface EquipmentPickup extends PickupAnchor, EquipmentOwnership {
 export type PagePickup = CoinPickup | EquipmentPickup;
 export type ProgressionRequest = { type: 'progress:get' }
   | { type: 'progress:collect'; url: string; logicalKey: string; index: number }
-  | { type: 'progress:equip'; itemId: string | null };
+  | { type: 'progress:equip'; itemId: string | null }
+  | { type: 'progress:buy'; itemId: string }
+  | { type: 'progress:sell'; itemId: string };
 export type ProgressionResponse = { ok: true; state: PlayerState; duplicate?: boolean; reward?: Equipment | null }
   | { ok: false; error: string };
 export const PLAYER_STORAGE_KEY = 'steelSteam.player.v2';

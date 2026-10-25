@@ -1,5 +1,6 @@
 import { coinId, encounterForPlatform } from './encounters';
 import type { Equipment, EquipmentOwnership, PlayerState } from './progression-types';
+import { shopOffer, sellValue } from './shop';
 
 export interface PlayerTransition {
   state: PlayerState;
@@ -37,9 +38,12 @@ function equipment(value: unknown): value is Equipment {
   const item = value as Partial<Equipment>;
   return typeof item.id === 'string' && item.id.length > 0
     && typeof item.name === 'string' && item.name.length > 0
-    && item.slot === 'boots' && item.rarity === 'rare'
+    && (item.slot === 'boots' || item.slot === 'glider')
+    && ['common', 'rare', 'epic', 'legendary'].includes(item.rarity as string)
     && typeof item.jumpMultiplier === 'number' && Number.isFinite(item.jumpMultiplier)
-    && item.jumpMultiplier >= 1.15 && item.jumpMultiplier <= 1.25
+    && (item.slot === 'glider' ? item.ability === 'glide' && item.jumpMultiplier === 1
+      : item.jumpMultiplier >= 1.15 && item.jumpMultiplier <= 1.25)
+    && (item.ability === undefined || item.ability === 'glide')
     && (item.color === undefined || (typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color)))
     && typeof item.description === 'string';
 }
@@ -146,6 +150,40 @@ export function equipItem(state: PlayerState, itemId: string | null): PlayerTran
   if (state.equippedItemId === itemId) return { state, duplicate: true, reward: null };
   return {
     state: { ...state, revision: increment(state.revision, 1), equippedItemId: itemId },
+    duplicate: false,
+    reward: null,
+  };
+}
+
+export function buyItem(state: PlayerState, itemId: string): PlayerTransition {
+  const offer = shopOffer(itemId);
+  if (!offer) throw new Error('That shop item is unavailable.');
+  if (state.inventory.some(item => item.id === offer.item.id)) throw new Error('You already own that item.');
+  if (state.coins < offer.price) throw new Error(`You need ${offer.price} coins.`);
+  return {
+    state: {
+      ...state,
+      revision: increment(state.revision, 1),
+      coins: increment(state.coins, -offer.price),
+      inventory: [...state.inventory, { ...offer.item }],
+      equippedItemId: state.equippedItemId ?? offer.item.id,
+    },
+    duplicate: false,
+    reward: offer.item,
+  };
+}
+
+export function sellItem(state: PlayerState, itemId: string): PlayerTransition {
+  const item = state.inventory.find(candidate => candidate.id === itemId);
+  if (!item) throw new Error('You do not own that item.');
+  return {
+    state: {
+      ...state,
+      revision: increment(state.revision, 1),
+      coins: increment(state.coins, sellValue(item)),
+      inventory: state.inventory.filter(candidate => candidate.id !== itemId),
+      equippedItemId: state.equippedItemId === itemId ? null : state.equippedItemId,
+    },
     duplicate: false,
     reward: null,
   };
