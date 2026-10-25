@@ -43,6 +43,7 @@ export class Game {
   private designs: SceneryDesign[] = [];
   private scenery: SceneryScene = { placements: [], protectedRects: [], ready: false };
   private decorationRevision = -1;
+  private protectedRectsRevision = -1;
   private levelRevision = -1;
   private layoutPending = false;
   private viewportChanged = true;
@@ -105,6 +106,7 @@ export class Game {
     this.saved = undefined;
     this.resetLoot();
     this.decorationRevision = this.levelRevision = this.rootRevision = -1;
+    this.protectedRectsRevision = -1;
     this.changes.clear();
     this.styleChanges.clear();
     this.observedRoots.clear();
@@ -424,8 +426,19 @@ export class Game {
   private refreshScenery(): void {
     if (!this.level || !this.host || !this.clearance) return;
     this.measureSceneryHud();
-    this.scenery.protectedRects = this.clearance.rectangles;
+    const clearanceSettled = !this.clearance.inspecting;
+    // Keep the last settled protection snapshot while hover/animation work is
+    // publishing conservative pending masks. This prevents rails flashing off.
+    if (clearanceSettled && this.protectedRectsRevision !== this.clearance.rectanglesRevision) {
+      this.scenery.protectedRects = this.clearance.rectangles.slice();
+      this.protectedRectsRevision = this.clearance.rectanglesRevision;
+    }
+    // `complete` means this frame produced a usable snapshot, even if a larger
+    // background inspection is still queued. This lets initial rails appear
+    // promptly instead of waiting for the whole document walk.
     this.scenery.ready = this.clearance.complete;
+    // Add newly discovered placements incrementally. Existing placements keep
+    // their stable design while geometry continues to inspect the page.
     if (this.decorationRevision !== this.geometry!.registryRevision) {
       this.scenery.placements = placeScenery(this.designs, this.geometry!.registryPlatforms, this.scenery.placements);
       this.decorationRevision = this.geometry!.registryRevision;

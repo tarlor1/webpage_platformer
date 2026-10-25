@@ -79,6 +79,8 @@ interface Measurement { count: number; x: number; y: number }
 /** Cosmetic exclusion masks in document CSS pixels; never contributes terrain. */
 export class TextClearance {
   rectangles: Rect[] = [];
+  /** Version of the last published protection snapshot. */
+  rectanglesRevision = 0;
   /** Pending local masks make an unfinished inspection safe to consume. */
   complete = false;
   needsRebuild = false;
@@ -620,5 +622,6 @@ export class TextClearance {
         if (task.blocker) this.rectangles.push(task.blocker);
       }
     }
+    this.rectanglesRevision++;
   }
 }

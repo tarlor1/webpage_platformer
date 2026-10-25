@@ -1,12 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PickupIndex, planPickups, updatePickups } from '../src/progression/collectibles';
-import { encounterForPlatform } from '../src/progression/encounters';
+import { eligibleLootPlatform, encounterForPlatform } from '../src/progression/encounters';
 import { createPlayer, stepBody } from '../src/engine/physics';
 import { MOTION, type Platform } from '../src/engine/types';
 import type { CoinPickup, EquipmentPickup, PagePickup } from '../src/progression/progression-types';
+import { setSurfaceMetadata } from '../src/page/surface-metadata';
 
 const URL = 'https://example.com/native-surfaces';
+
+test('video sources never receive coins or equipment', () => {
+  const video = { tagName: 'VIDEO', querySelector: () => null } as unknown as Element;
+  const videoPlatform: Platform = { id: 'video', logicalKey: 'video-content', x: 0, y: 500, width: 640 };
+  setSurfaceMetadata(videoPlatform, video, false);
+  const encounter = {
+    ...encounterForPlatform(URL, videoPlatform.logicalKey!),
+    equipment: {
+      id: 'video-equipment', name: 'Video boots', slot: 'boots' as const, rarity: 'rare' as const,
+      jumpMultiplier: 1.2, description: 'Should never appear inside a video.',
+    },
+  };
+  assert.equal(eligibleLootPlatform(videoPlatform), false);
+  assert.deepEqual(planPickups([encounter], [videoPlatform]), []);
+
+  const wrapper = { tagName: 'DIV', querySelector: (selector: string) => selector === 'video' ? video : null } as unknown as Element;
+  const wrappedPlatform: Platform = { ...videoPlatform, id: 'video-wrapper', logicalKey: 'wrapped-video' };
+  setSurfaceMetadata(wrappedPlatform, wrapper, false);
+  assert.equal(eligibleLootPlatform(wrappedPlatform), false);
+  assert.deepEqual(planPickups([encounter], [wrappedPlatform]), []);
+});
 
 function sevenCoinKey(): string {
   for (let index = 0; index < 100; index++) {
