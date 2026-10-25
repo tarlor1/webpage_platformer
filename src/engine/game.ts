@@ -3,6 +3,7 @@ import { buildLevel, fellBelowViewport, outsidePage } from './level';
 import { Input } from './input';
 import { carryBody, createPlayer, dropThrough, respawnOnPlatform, stepBody } from './physics';
 import { drawWorld } from '../rendering/render';
+import { drawPlayerLocator } from '../rendering/player-locator';
 import { MOTION, OVERLAY_ID, type Body, type Level } from './types';
 import { TextClearance } from '../rendering/text-clearance';
 import { sceneryDesigns } from '../rendering/scenery-art';
@@ -13,6 +14,7 @@ import { pageSeedKey } from '../page/page-identity';
 import { planPickups, selectActivePickups, updatePickups } from '../progression/collectibles';
 import { requestProgression } from '../progression/progression-client';
 import { mountProgressionUI, type ProgressionPanel } from '../ui/progression-ui';
+import { mountMovablePanel } from '../ui/movable-panel';
 import { EQUIPMENT_STORAGE_PREFIX, PLAYER_STORAGE_KEY, type EquipmentOwnership, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
 
 const PAGE_MUTATIONS: MutationObserverInit = {
@@ -53,6 +55,7 @@ export class Game {
   private accumulator = 0;
   private debug = false;
   private facing = 1;
+  private locatorStarted = -Infinity;
   private coyote = 0;
   private jumpBuffer = 0;
   private lastUrl = '';
@@ -90,6 +93,7 @@ export class Game {
     this.progressError = '';
     this.debug = false;
     this.facing = 1;
+    this.locatorStarted = -Infinity;
     this.lastHud = 0;
     this.lastStanding = undefined;
     this.stranded = false;
@@ -112,6 +116,15 @@ export class Game {
       button{background:#344953;color:#fff1d8;border:1px solid #ad874e;border-radius:4px;padding:6px 9px;font:inherit;cursor:pointer}button:focus-visible{outline:2px solid #62d8cd}
       .surface{position:absolute;width:1px;height:1px;overflow:hidden;outline:none;pointer-events:none}
       pre{white-space:pre-wrap;font:11px/1.4 monospace;margin:6px 0 0;color:#7fe4d7}
+      section{max-width:calc(100vw - 16px)}
+      section.minimized{width:230px;padding:6px 8px}
+      .panel-header{display:flex;align-items:center;gap:6px}
+      .panel-drag{flex:1;min-width:0;text-align:left;border:0;background:transparent;padding:4px 0;cursor:grab;touch-action:none;user-select:none}
+      .panel-drag:active{cursor:grabbing}
+      section.dragging{will-change:transform}
+      .panel-drag strong{font-size:11px;letter-spacing:.04em}
+      .panel-toggle{flex:none;font-size:18px;line-height:1;padding:4px 7px}
+      [hidden]{display:none!important}
     </style><canvas aria-hidden="true"></canvas><div class="surface" tabindex="0" role="application" aria-label="Steel and Steam platformer. Arrows move, Space jumps, Down drops through. Escape stops."></div><section aria-label="Steel and Steam controls"><strong>STEEL &amp; STEAM</strong><p class="status" aria-live="polite"></p><p>← → / A D move · Space / W / ↑ jump<br>↓ / S drop through · B geometry · Esc stop</p><nav><button class="focus">Focus game</button><button class="debug" aria-pressed="false">Debug</button><button class="respawn">Respawn</button><button class="stop">Stop</button></nav><pre hidden></pre></section>`;
     document.documentElement.append(host);
     this.host = host;
@@ -141,7 +154,17 @@ export class Game {
       .catch(error => this.showProgressError(error, run));
     this.surface = shadow.querySelector('.surface')!;
     const focus = () => this.surface!.focus({ preventScroll: true });
+    mountMovablePanel(shadow.querySelector('section')!, signal, focus);
     shadow.querySelector('.focus')!.addEventListener('click', focus, { signal });
+    const locate = document.createElement('button');
+    locate.type = 'button';
+    locate.className = 'locate';
+    locate.textContent = 'Find player';
+    locate.title = 'Show an arrow pointing to the player';
+    shadow.querySelector('.focus')!.after(locate);
+    locate.addEventListener('click', () => {
+      this.locatorStarted = performance.now();
+    }, { signal });
     shadow.querySelector('.debug')!.addEventListener('click', () => { this.toggleDebug(); focus(); }, { signal });
     shadow.querySelector('.respawn')!.addEventListener('click', () => { this.respawn(); focus(); }, { signal });
     shadow.querySelector('.stop')!.addEventListener('click', () => this.stop(), { signal });
@@ -489,6 +512,7 @@ export class Game {
     }
     if (Math.abs(player.x - this.inspectedX) > 200 || Math.abs(player.y - this.inspectedY) > 200) this.schedule();
     drawWorld(this.ctx!, this.level!, this.player!, this.debug, this.facing, this.scenery, this.activePickups, this.collected, this.jumpMultiplier > 1);
+    drawPlayerLocator(this.ctx!, player, now - this.locatorStarted);
     if (now - this.lastHud > 100) {
       this.lastHud = now;
       const offscreen = player.x + player.width < scrollX || player.x > scrollX + innerWidth
