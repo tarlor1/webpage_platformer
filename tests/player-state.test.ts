@@ -80,13 +80,13 @@ test('equipment pickup awards only its item and is claimed once', () => {
 });
 
 test('shop sells a glider, equips the first purchase, and resells it for less', () => {
-  const purchased = buyItem({ ...createPlayerState(), coins: 25 }, 'pocket-glider:common:glider').state;
+  const purchased = buyItem({ ...createPlayerState(), coins: 205 }, 'pocket-glider:common:glider').state;
   assert.equal(purchased.coins, 5);
   assert.equal(purchased.inventory[0]!.ability, 'glide');
   assert.equal(purchased.equippedItems.glider, inventoryItemId(purchased.inventory[0]!));
   assert.deepEqual(readPlayerState(purchased), purchased);
   const sold = sellItem(purchased, inventoryItemId(purchased.inventory[0]!)).state;
-  assert.equal(sold.coins, 15);
+  assert.equal(sold.coins, 105);
   assert.deepEqual(sold.inventory, []);
   assert.equal(sold.equippedItems.glider, null);
 });
@@ -363,7 +363,7 @@ test('corrupt and unsupported saves fail visibly without resetting progression',
 });
 
 test('boots and glider equip independently, replace only their slot, and survive restart', () => {
-  const boots = buyItem({ ...createPlayerState(), coins: 100 }, 'springheel-boots:common:boots').state;
+  const boots = buyItem({ ...createPlayerState(), coins: 300 }, 'springheel-boots:common:boots').state;
   const both = buyItem(boots, 'pocket-glider:common:glider').state;
   const bootId = inventoryItemId(both.inventory[0]!);
   const gliderId = inventoryItemId(both.inventory[1]!);
@@ -388,7 +388,7 @@ test('boots and glider equip independently, replace only their slot, and survive
 });
 
 test('buying boots preserves an equipped glider and buying other boots preserves selected boots', () => {
-  const glider = buyItem({ ...createPlayerState(), coins: 100 }, 'pocket-glider:common:glider').state;
+  const glider = buyItem({ ...createPlayerState(), coins: 300 }, 'pocket-glider:common:glider').state;
   const selected = equipItem(collectEquipment(glider, ownership).state, worldEquipmentId(ownership.encounterId)).state;
   const purchased = buyItem(selected, 'springheel-boots:common:boots').state;
   assert.deepEqual(purchased.equippedItems, selected.equippedItems);
@@ -398,7 +398,7 @@ test('buying boots preserves an equipped glider and buying other boots preserves
 });
 
 test('old single-slot glider saves migrate into the glider slot without auto-equipping boots', () => {
-  const purchased = buyItem({ ...createPlayerState(), coins: 100 }, 'pocket-glider:common:glider').state;
+  const purchased = buyItem({ ...createPlayerState(), coins: 300 }, 'pocket-glider:common:glider').state;
   const { equippedItems, ...old } = collectEquipment(purchased, ownership).state;
   const migrated = readPlayerState({ ...old, equippedItemId: equippedItems.glider });
   assert.deepEqual(migrated.equippedItems, { boots: null, glider: equippedItems.glider });

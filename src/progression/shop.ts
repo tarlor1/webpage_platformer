@@ -16,7 +16,7 @@ const offers: { item: Omit<Equipment, 'id'>; price: number; sellPrice: number }[
       jumpMultiplier: 1, ability: 'glide', color: '#7fe4d7',
       description: 'Hold Space while descending to float.',
     },
-    price: 20, sellPrice: 10,
+    price: 200, sellPrice: 100,
   },
 ];
 
@@ -29,5 +29,5 @@ export function shopOffer(itemId: string): ShopOffer | undefined {
 }
 
 export function sellValue(item: Equipment): number {
-  return item.slot === 'glider' ? 10 : bootTier(item.rarity).sellPrice;
+  return item.slot === 'glider' ? 100 : bootTier(item.rarity).sellPrice;
 }
