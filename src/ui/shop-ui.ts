@@ -1,5 +1,6 @@
 import type { PlayerState } from '../progression/progression-types';
 import { SHOP_OFFERS, shopOffer } from '../progression/shop';
+import { equipmentId, inventoryItemId } from '../progression/equipment-id';
 
 export interface ShopPanel {
   update(state: PlayerState | null, error?: string): void;
@@ -26,7 +27,7 @@ export function mountShopUI(
   let pending = '';
 
   function render(): void {
-    const owned = new Set(state?.inventory.map(item => item.id) ?? []);
+    const owned = new Set(state?.inventory.map(equipmentId) ?? []);
     offers.replaceChildren();
     for (const offer of SHOP_OFFERS) {
       const row = document.createElement('div');
@@ -50,6 +51,7 @@ export function mountShopUI(
       empty.textContent = 'No items to sell.';
       inventory.append(empty);
     } else for (const item of state.inventory) {
+      const instanceId = inventoryItemId(item);
       const row = document.createElement('div');
       row.className = 'shop-offer';
       const text = document.createElement('span');
@@ -57,8 +59,8 @@ export function mountShopUI(
       text.textContent = `${item.name} — sell for ${offer?.sellPrice ?? (item.slot === 'glider' ? 10 : 6)} coins`;
       const button = document.createElement('button');
       button.type = 'button';
-      button.dataset.shopSell = item.id;
-      button.textContent = pending === `sell:${item.id}` ? 'Selling…' : 'Sell';
+      button.dataset.shopSell = instanceId;
+      button.textContent = pending === `sell:${instanceId}` ? 'Selling…' : 'Sell';
       button.disabled = !!pending;
       row.append(text, button);
       inventory.append(row);

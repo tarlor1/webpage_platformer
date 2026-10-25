@@ -1,4 +1,5 @@
 import type { Equipment } from './progression-types';
+import { equipmentId } from './equipment-id';
 
 export interface ShopOffer {
   item: Equipment;
@@ -6,10 +7,10 @@ export interface ShopOffer {
   sellPrice: number;
 }
 
-export const SHOP_OFFERS: readonly ShopOffer[] = [
+const offers: { item: Omit<Equipment, 'id'>; price: number; sellPrice: number }[] = [
   {
     item: {
-      id: 'shop:boots', name: 'Springheel Boots', slot: 'boots', rarity: 'common',
+      name: 'Springheel Boots', slot: 'boots', rarity: 'common',
       jumpMultiplier: 1.2, color: '#ad874e',
       description: 'Increases jump height.',
     },
@@ -17,13 +18,17 @@ export const SHOP_OFFERS: readonly ShopOffer[] = [
   },
   {
     item: {
-      id: 'shop:glider', name: 'Pocket Glider', slot: 'glider', rarity: 'common',
+      name: 'Pocket Glider', slot: 'glider', rarity: 'common',
       jumpMultiplier: 1, ability: 'glide', color: '#7fe4d7',
       description: 'Hold Space while descending to float.',
     },
     price: 20, sellPrice: 10,
   },
 ];
+
+export const SHOP_OFFERS: readonly ShopOffer[] = offers.map(offer => ({
+  ...offer, item: { ...offer.item, id: equipmentId(offer.item) },
+}));
 
 export function shopOffer(itemId: string): ShopOffer | undefined {
   return SHOP_OFFERS.find(offer => offer.item.id === itemId);

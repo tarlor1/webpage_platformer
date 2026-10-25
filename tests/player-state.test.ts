@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { coinId, encounterForPlatform } from '../src/progression/encounters';
 import { buyItem, collectCoin, collectEquipment, createPlayerState, equipItem, readPlayerState, sellItem } from '../src/progression/player-state';
 import type { PlayerState } from '../src/progression/progression-types';
+import { inventoryItemId, worldEquipmentId } from '../src/progression/equipment-id';
 
 const PAGE = 'https://example.com/article';
 function keyWithEquipment(present: boolean): string {
@@ -70,8 +71,9 @@ test('equipment can be picked up with zero coins and is claimed once independent
   const initial = createPlayerState();
   const result = collectEquipment(initial, ownership);
   assert.equal(result.duplicate, false);
-  assert.deepEqual(result.reward, encounter.equipment);
-  assert.deepEqual(result.state.inventory, [encounter.equipment]);
+  const owned = { ...encounter.equipment!, instanceId: worldEquipmentId(encounter.id) };
+  assert.deepEqual(result.reward, owned);
+  assert.deepEqual(result.state.inventory, [owned]);
   assert.deepEqual(result.state.claimedRewards, [encounter.id]);
   assert.deepEqual(result.state.completedEncounters, []);
   assert.deepEqual(result.state.collectedCoins, []);
@@ -93,12 +95,12 @@ test('equipment can be picked up with zero coins and is claimed once independent
 });
 
 test('shop sells a glider, equips the first purchase, and resells it for less', () => {
-  const purchased = buyItem({ ...createPlayerState(), coins: 25 }, 'shop:glider').state;
+  const purchased = buyItem({ ...createPlayerState(), coins: 25 }, 'pocket-glider:common:glider').state;
   assert.equal(purchased.coins, 5);
   assert.equal(purchased.inventory[0]!.ability, 'glide');
-  assert.equal(purchased.equippedItemId, 'shop:glider');
+  assert.equal(purchased.equippedItemId, inventoryItemId(purchased.inventory[0]!));
   assert.deepEqual(readPlayerState(purchased), purchased);
-  const sold = sellItem(purchased, 'shop:glider').state;
+  const sold = sellItem(purchased, inventoryItemId(purchased.inventory[0]!)).state;
   assert.equal(sold.coins, 15);
   assert.deepEqual(sold.inventory, []);
   assert.equal(sold.equippedItemId, null);
@@ -106,15 +108,33 @@ test('shop sells a glider, equips the first purchase, and resells it for less', 
 
 test('shop boots can be bought when a different pair is already owned', () => {
   const existing = {
-    id: 'encounter:other-boots', name: 'Skybound Boots', slot: 'boots' as const, rarity: 'rare' as const,
+    id: 'skybound-boots:rare:boots', instanceId: 'test:skybound', name: 'Skybound Boots', slot: 'boots' as const, rarity: 'rare' as const,
     jumpMultiplier: 1.15, description: 'A different pair.',
   };
   const state = { ...createPlayerState(), coins: 20, inventory: [existing] };
-  const purchased = buyItem(state, 'shop:boots').state;
+  const purchased = buyItem(state, 'springheel-boots:common:boots').state;
   assert.equal(purchased.coins, 8);
-  assert.deepEqual(purchased.inventory.map(item => item.id), ['encounter:other-boots', 'shop:boots']);
+  assert.deepEqual(purchased.inventory.map(item => item.id), ['skybound-boots:rare:boots', 'springheel-boots:common:boots']);
   assert.deepEqual(readPlayerState(purchased), purchased);
-  assert.throws(() => buyItem({ ...purchased, coins: 100 }, 'shop:boots'), /already own that item/);
+  assert.throws(() => buyItem({ ...purchased, coins: 100 }, 'springheel-boots:common:boots'), /already own that item/);
+});
+
+test('shop blocks matching name/rarity/type regardless of stats, and permits rebuying after sale', () => {
+  const item = { ...ownership.equipment, name: 'Springheel Boots', rarity: 'common' as const,
+    id: 'springheel-boots:common:boots', instanceId: 'world:test-shop-match', jumpMultiplier: 1.25 };
+  const otherCopy = { ...item, instanceId: 'world:another-shop-match' };
+  const state = { ...createPlayerState(), coins: 100, inventory: [item, otherCopy] };
+  assert.throws(() => buyItem(state, item.id), /already own/);
+  const oneSold = sellItem(state, item.instanceId).state;
+  assert.throws(() => buyItem(oneSold, item.id), /already own/);
+  const sold = sellItem(oneSold, otherCopy.instanceId).state;
+  const repurchased = buyItem(sold, item.id).state;
+  assert.equal(repurchased.inventory.length, 1);
+  assert.notEqual(repurchased.inventory[0]!.instanceId, item.instanceId);
+  const soldAgain = sellItem(repurchased, inventoryItemId(repurchased.inventory[0]!)).state;
+  const boughtAgain = buyItem(soldAgain, item.id).state;
+  assert.notEqual(boughtAgain.inventory[0]!.instanceId, repurchased.inventory[0]!.instanceId);
+  assert.ok(boughtAgain.coins < state.coins, 'buy/sell cycles cost coins');
 });
 
 test('a new logical key and a new meaningful URL each permit distinct coin sets on old pages', () => {
@@ -161,7 +181,7 @@ test('invalid indices, logical keys and URLs leave earned progression unchanged'
 test('owned gear equips and unequips idempotently, and an unearned deterministic ID is rejected', () => {
   assert.throws(() => equipItem(createPlayerState(), encounterForPlatform(PAGE, rareKey).equipment!.id), /not owned/);
   const earned = collectEquipment(createPlayerState(), ownership).state;
-  const id = earned.inventory[0]!.id;
+  const id = inventoryItemId(earned.inventory[0]!);
   const equipped = equipItem(earned, id).state;
   assert.equal(equipped.equippedItemId, id);
   assert.equal(equipped.revision, earned.revision + 1);
@@ -174,7 +194,7 @@ test('owned gear equips and unequips idempotently, and an unearned deterministic
   assert.equal(equipItem(unequipped, null).state, unequipped);
 });
 
-test('v1 migration is idempotent and preserves exact legacy inventory, equipment and claim history', () => {
+test('v1 migration normalizes equipment IDs and preserves stats, selection and claim history', () => {
   const boots = { id: 'encounter-v1:legacy:equipment:boots', name: 'Legacy Boots', slot: 'boots', rarity: 'rare',
     jumpMultiplier: 1.2, description: 'Earned on an older page.' };
   const legacy = { version: 1, revision: 19, coins: 75, xp: 300, level: 4, inventory: [boots], equippedItemId: boots.id,
@@ -182,21 +202,77 @@ test('v1 migration is idempotent and preserves exact legacy inventory, equipment
     collectedCoins: ['encounter-v1:legacy:coin:0', 'encounter-v1:legacy:coin:1', 'encounter-v1:legacy:coin:2'] };
   const backup = structuredClone(legacy);
   const migrated = readPlayerState(legacy);
-  assert.deepEqual(migrated, { ...legacy, version: 2 });
+  assert.deepEqual(migrated, { ...legacy, version: 2,
+    inventory: [{ ...boots, id: 'legacy-boots:rare:boots', instanceId: `legacy:${boots.id}` }],
+    equippedItemId: `legacy:${boots.id}` });
   assert.deepEqual(legacy, backup);
   assert.equal(readPlayerState(migrated), migrated);
   const claimed = collectCoin(migrated, PAGE, rareKey, 0).state;
   assert.equal(claimed.coins, legacy.coins + 1);
   assert.equal(claimed.xp, legacy.xp + 20);
-  assert.equal(claimed.equippedItemId, boots.id);
-  assert.deepEqual(claimed.inventory, legacy.inventory);
+  assert.equal(claimed.equippedItemId, `legacy:${boots.id}`);
+  assert.deepEqual(claimed.inventory, migrated.inventory);
   assert.ok(claimed.collectedCoins.includes(legacy.collectedCoins[0]!));
   assert.ok(claimed.completedEncounters.includes('encounter-v1:legacy'));
 });
 
+test('equipment ID migration preserves all old copies, individual stats, selection and currency', () => {
+  const first = { ...ownership.equipment, id: 'encounter-v2:first:equipment:boots' };
+  const equipped = { ...first, id: 'encounter-v2:second:equipment:boots', jumpMultiplier: 1.25 };
+  const original = { ...createPlayerState(), coins: 50, inventory: [first, equipped], equippedItemId: equipped.id };
+  const before = structuredClone(original);
+  const migrated = readPlayerState(original);
+  assert.equal(migrated.inventory.length, 2);
+  assert.equal(migrated.inventory[0]!.jumpMultiplier, first.jumpMultiplier);
+  assert.equal(migrated.inventory[1]!.jumpMultiplier, 1.25);
+  assert.equal(migrated.inventory[0]!.id, ownership.equipment.id);
+  assert.equal(migrated.inventory[1]!.id, ownership.equipment.id);
+  assert.equal(migrated.equippedItemId, `legacy:${equipped.id}`);
+  assert.notEqual(inventoryItemId(migrated.inventory[0]!), inventoryItemId(migrated.inventory[1]!));
+  assert.equal(migrated.coins, 50);
+  assert.equal(readPlayerState(migrated), migrated);
+  assert.deepEqual(original, before);
+});
+
+test('old shop IDs migrate and rarity distinguishes otherwise identical boots', () => {
+  const old = { ...ownership.equipment, id: 'shop:boots', name: 'Springheel Boots', rarity: 'common' as const };
+  const migrated = readPlayerState({ ...createPlayerState(), coins: 50, inventory: [old], equippedItemId: old.id });
+  assert.equal(migrated.inventory[0]!.id, 'springheel-boots:common:boots');
+  assert.equal(migrated.equippedItemId, 'legacy:shop:boots');
+  assert.throws(() => buyItem(migrated, 'springheel-boots:common:boots'), /already own/);
+  const rare = { ...old, id: 'springheel-boots:rare:boots', rarity: 'rare' as const };
+  const purchased = buyItem({ ...createPlayerState(), coins: 50, inventory: [rare] }, 'springheel-boots:common:boots').state;
+  assert.equal(purchased.inventory.length, 2);
+});
+
+test('identical world items coexist, sell individually, and each source remains claimed after selling', () => {
+  const legacy = { ...ownership, equipment: { ...ownership.equipment, id: `${ownership.encounterId}:equipment:boots` } };
+  const first = collectEquipment(createPlayerState(), legacy).state;
+  assert.equal(first.inventory[0]!.id, ownership.equipment.id);
+  const otherSource = { ...ownership, encounterId: 'encounter-v2:other-source' };
+  const second = collectEquipment(first, otherSource);
+  assert.equal(second.duplicate, false);
+  assert.equal(second.state.inventory.length, 2);
+  assert.ok(second.state.claimedRewards.includes(otherSource.encounterId));
+  const equipped = equipItem(second.state, worldEquipmentId(otherSource.encounterId)).state;
+  const sold = sellItem(equipped, worldEquipmentId(ownership.encounterId)).state;
+  assert.equal(sold.coins, equipped.coins + 6);
+  assert.equal(sold.inventory.length, 1);
+  assert.equal(sold.inventory[0]!.instanceId, worldEquipmentId(otherSource.encounterId));
+  assert.equal(sold.equippedItemId, worldEquipmentId(otherSource.encounterId));
+  assert.deepEqual(readPlayerState(second.state), second.state);
+  assert.throws(() => sellItem(sold, worldEquipmentId(ownership.encounterId)), /not own/);
+  assert.equal(collectEquipment(sold, legacy).state, sold);
+  assert.equal(collectEquipment(sold, otherSource).state, sold);
+  const empty = sellItem(sold, worldEquipmentId(otherSource.encounterId)).state;
+  assert.equal(empty.coins, equipped.coins + 12);
+  assert.equal(empty.inventory.length, 0);
+  assert.equal(empty.equippedItemId, null);
+});
+
 test('serialized saves retain selection and duplicate protection across restart', () => {
   const earned = collectEquipment(completePlatform(rareKey), ownership).state;
-  const equipped = equipItem(earned, earned.inventory[0]!.id).state;
+  const equipped = equipItem(earned, inventoryItemId(earned.inventory[0]!)).state;
   const saved: unknown = JSON.parse(JSON.stringify(equipped));
   const restored = readPlayerState(saved);
   assert.deepEqual(restored, equipped);

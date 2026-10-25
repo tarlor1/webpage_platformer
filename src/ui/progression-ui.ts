@@ -1,5 +1,6 @@
 import { coinId } from '../progression/encounters';
 import type { Equipment, PageEncounter, PlayerState } from '../progression/progression-types';
+import { inventoryItemId } from '../progression/equipment-id';
 
 interface EquipmentRow {
   element: HTMLLIElement;
@@ -7,12 +8,14 @@ interface EquipmentRow {
   name: HTMLElement;
   description: HTMLElement;
   effect: HTMLElement;
+  ids: HTMLElement;
   marker: HTMLElement;
   button: HTMLButtonElement;
 }
 
 export interface ProgressionPanel {
   update(state: PlayerState | null, encounters: readonly PageEncounter[], error?: string): void;
+  setDebug(enabled: boolean): void;
   dispose(): void;
 }
 
@@ -46,6 +49,8 @@ export function mountProgressionUI(
     .progression-panel .progression-equipped{font-size:11px;color:#7fe4d7}
     .progression-panel .progression-description{font-size:12px;color:#c8d2d3;margin:3px 0}
     .progression-panel .progression-effect{font-size:12px;color:#f5cb7d;margin:3px 0 6px}
+    .progression-panel .progression-item-ids{display:none;font:11px/1.4 monospace;color:#c8d2d3;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
+    .progression-panel[data-debug] .progression-item-ids{display:block}
     .progression-panel button{background:#344953;color:#fff1d8;border:1px solid #ad874e;border-radius:4px;padding:5px 9px;font:inherit;cursor:pointer}
     .progression-panel button:focus-visible{outline:2px solid #62d8cd}
     .progression-panel button:disabled,.progression-panel button[aria-disabled="true"]{cursor:wait;opacity:.55}
@@ -129,10 +134,12 @@ export function mountProgressionUI(
     effect.className = 'progression-effect';
     const button = document.createElement('button');
     button.type = 'button';
-    button.dataset.equipmentId = item.id;
-    element.append(heading, description, effect, button);
+    button.dataset.equipmentId = inventoryItemId(item);
+    const ids = document.createElement('div');
+    ids.className = 'progression-item-ids';
+    element.append(heading, description, effect, button, ids);
     list.append(element);
-    return { element, icon, name, description, effect, marker, button };
+    return { element, icon, name, description, effect, ids, marker, button };
   }
 
   function render(): void {
@@ -166,7 +173,7 @@ export function mountProgressionUI(
       : 'Loading saved inventory…');
     empty.hidden = !!state?.inventory.length;
 
-    const ownedIds = new Set(state?.inventory.map(item => item.id) ?? []);
+    const ownedIds = new Set(state?.inventory.map(inventoryItemId) ?? []);
     for (const [id, row] of rows) {
       if (!ownedIds.has(id)) {
         row.element.remove();
@@ -174,19 +181,21 @@ export function mountProgressionUI(
       }
     }
     for (const item of state?.inventory ?? []) {
-      let row = rows.get(item.id);
+      const instanceId = inventoryItemId(item);
+      let row = rows.get(instanceId);
       if (!row) {
         row = createRow(item);
-        rows.set(item.id, row);
+        rows.set(instanceId, row);
       }
-      const equipped = state?.equippedItemId === item.id;
+      const equipped = state?.equippedItemId === instanceId;
       setText(row.name, item.name);
+      setText(row.ids, `ID: ${item.id}\nInstance ID: ${instanceId}`);
       row.icon.style.borderColor = item.color ?? '#ad874e';
       setText(row.description, item.description);
       const heightBonus = Math.round((item.jumpMultiplier ** 2 - 1) * 100);
       setText(row.effect, `Jump power ×${item.jumpMultiplier} · ${heightBonus}% higher jumps`);
       row.marker.hidden = !equipped;
-      setText(row.button, pending && (pendingItemId === item.id || (pendingItemId === null && equipped))
+      setText(row.button, pending && (pendingItemId === instanceId || (pendingItemId === null && equipped))
         ? 'Saving…' : equipped ? 'Unequip' : 'Equip');
       row.button.setAttribute('aria-label', `${equipped ? 'Unequip' : 'Equip'} ${item.name}`);
       // Keep keyboard focus during saves; the delegated handler rejects pending actions.
@@ -207,7 +216,7 @@ export function mountProgressionUI(
     const button = target.closest<HTMLButtonElement>('button[data-equipment-id]');
     if (!button || !root.contains(button) || pending || !currentState) return;
     const id = button.dataset.equipmentId;
-    if (!id || !currentState.inventory.some(item => item.id === id)) return;
+    if (!id || !currentState.inventory.some(item => inventoryItemId(item) === id)) return;
     const itemId = currentState.equippedItemId === id ? null : id;
     pending = true;
     pendingItemId = itemId;
@@ -230,6 +239,9 @@ export function mountProgressionUI(
 
   render();
   return {
+    setDebug(enabled) {
+      if (!disposed) root.toggleAttribute('data-debug', enabled);
+    },
     update(state, encounters, error) {
       if (disposed) return;
       currentState = state;

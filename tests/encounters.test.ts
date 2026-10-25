@@ -94,7 +94,7 @@ test('3–7 coin sets and approximately one-percent equipment rolls vary by plat
     if (encounter.equipment) {
       gear++;
       assert.ok(encounter.equipment.jumpMultiplier >= 1.15 && encounter.equipment.jumpMultiplier <= 1.25);
-      assert.ok(encounter.equipment.id.startsWith(encounter.id));
+      assert.equal(encounter.equipment.id, `${encounter.equipment.name.toLowerCase().replaceAll(' ', '-')}:rare:boots`);
       appearances.add(`${encounter.equipment.name}:${encounter.equipment.color}:${encounter.equipment.jumpMultiplier}`);
     }
   }

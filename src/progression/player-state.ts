@@ -1,6 +1,7 @@
 import { coinId, encounterForPlatform } from './encounters';
 import type { Equipment, EquipmentOwnership, PlayerState } from './progression-types';
 import { shopOffer, sellValue } from './shop';
+import { equipmentId, inventoryItemId, worldEquipmentId } from './equipment-id';
 
 export interface PlayerTransition {
   state: PlayerState;
@@ -37,6 +38,7 @@ function equipment(value: unknown): value is Equipment {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Partial<Equipment>;
   return typeof item.id === 'string' && item.id.length > 0
+    && (item.instanceId === undefined || typeof item.instanceId === 'string' && item.instanceId.length > 0)
     && typeof item.name === 'string' && item.name.length > 0
     && (item.slot === 'boots' || item.slot === 'glider')
     && ['common', 'rare', 'epic', 'legendary'].includes(item.rarity as string)
@@ -69,14 +71,29 @@ export function readPlayerState(value: unknown): PlayerState {
   }
   const owned = new Set<string>();
   for (const item of state.inventory) {
-    if (owned.has(item.id)) throw new Error('Saved inventory has duplicate equipment. Progress was not changed.');
-    owned.add(item.id);
+    const instance = inventoryItemId(item);
+    if (owned.has(instance)) throw new Error('Saved inventory has duplicate equipment instances. Progress was not changed.');
+    owned.add(instance);
   }
   if (state.equippedItemId !== null && (typeof state.equippedItemId !== 'string' || !owned.has(state.equippedItemId))) {
     throw new Error('Saved equipped item is not owned. Progress was not changed.');
   }
-  // Legacy IDs remain untouched: old page-wide claims cannot be mapped to absent platform keys.
-  return state.version === 2 ? state as PlayerState : { ...state, version: 2 } as PlayerState;
+  // Keep encounter/coin claims intact; only equipment identity changes.
+  const inventory: Equipment[] = [];
+  let equippedItemId: string | null = null;
+  for (const item of state.inventory) {
+    const id = equipmentId(item);
+    // Deterministic migration preserves every old copy and its original stats.
+    const instanceId = item.instanceId ?? `legacy:${item.id}`;
+    if (inventoryItemId(item) === state.equippedItemId) equippedItemId = instanceId;
+    inventory.push(item.id === id && item.instanceId === instanceId ? item : { ...item, id, instanceId });
+  }
+  if (new Set(inventory.map(inventoryItemId)).size !== inventory.length) {
+    throw new Error('Saved inventory has duplicate equipment instances. Progress was not changed.');
+  }
+  const changed = state.version !== 2 || equippedItemId !== state.equippedItemId
+    || inventory.length !== state.inventory.length || inventory.some((item, index) => item !== state.inventory![index]);
+  return changed ? { ...state, version: 2, inventory, equippedItemId } as PlayerState : state as PlayerState;
 }
 
 function increment(value: number, amount: number): number {
@@ -124,11 +141,14 @@ export function collectEquipment(state: PlayerState, value: unknown): PlayerTran
   if (typeof value !== 'object' || value === null) throw new Error('Saved equipment ownership is invalid.');
   const record = value as Partial<EquipmentOwnership>;
   if (typeof record.encounterId !== 'string' || !record.encounterId
-    || !equipment(record.equipment) || !record.equipment.id.startsWith(`${record.encounterId}:equipment:`)) {
+    || !equipment(record.equipment) || record.equipment.slot !== 'boots'
+    || !(record.equipment.id.startsWith(`${record.encounterId}:equipment:`)
+      || (/^encounter-v[12]:/.test(record.encounterId) && record.equipment.id === equipmentId(record.equipment)))) {
     throw new Error('Saved equipment ownership is invalid.');
   }
-  const item = record.equipment;
-  if (state.claimedRewards.includes(record.encounterId) || state.inventory.some(owned => owned.id === item.id)) {
+  const item = { ...record.equipment, id: equipmentId(record.equipment), instanceId: worldEquipmentId(record.encounterId) };
+  if (state.claimedRewards.includes(record.encounterId)
+    || state.inventory.some(owned => inventoryItemId(owned) === item.instanceId)) {
     return { state, duplicate: true, reward: null };
   }
   return {
@@ -144,7 +164,7 @@ export function collectEquipment(state: PlayerState, value: unknown): PlayerTran
 }
 
 export function equipItem(state: PlayerState, itemId: string | null): PlayerTransition {
-  if (itemId !== null && !state.inventory.some(item => item.id === itemId)) {
+  if (itemId !== null && !state.inventory.some(item => inventoryItemId(item) === itemId)) {
     throw new Error('Cannot equip equipment that is not owned.');
   }
   if (state.equippedItemId === itemId) return { state, duplicate: true, reward: null };
@@ -158,30 +178,32 @@ export function equipItem(state: PlayerState, itemId: string | null): PlayerTran
 export function buyItem(state: PlayerState, itemId: string): PlayerTransition {
   const offer = shopOffer(itemId);
   if (!offer) throw new Error('That shop item is unavailable.');
-  if (state.inventory.some(item => item.id === offer.item.id)) throw new Error('You already own that item.');
+  if (state.inventory.some(item => equipmentId(item) === offer.item.id)) throw new Error('You already own that item.');
   if (state.coins < offer.price) throw new Error(`You need ${offer.price} coins.`);
+  const revision = increment(state.revision, 1);
+  const item = { ...offer.item, instanceId: `purchase:${revision}:${offer.item.id}` };
   return {
     state: {
       ...state,
-      revision: increment(state.revision, 1),
+      revision,
       coins: increment(state.coins, -offer.price),
-      inventory: [...state.inventory, { ...offer.item }],
-      equippedItemId: state.equippedItemId ?? offer.item.id,
+      inventory: [...state.inventory, item],
+      equippedItemId: state.equippedItemId ?? item.instanceId,
     },
     duplicate: false,
-    reward: offer.item,
+    reward: item,
   };
 }
 
 export function sellItem(state: PlayerState, itemId: string): PlayerTransition {
-  const item = state.inventory.find(candidate => candidate.id === itemId);
+  const item = state.inventory.find(candidate => inventoryItemId(candidate) === itemId);
   if (!item) throw new Error('You do not own that item.');
   return {
     state: {
       ...state,
       revision: increment(state.revision, 1),
       coins: increment(state.coins, sellValue(item)),
-      inventory: state.inventory.filter(candidate => candidate.id !== itemId),
+      inventory: state.inventory.filter(candidate => inventoryItemId(candidate) !== itemId),
       equippedItemId: state.equippedItemId === itemId ? null : state.equippedItemId,
     },
     duplicate: false,

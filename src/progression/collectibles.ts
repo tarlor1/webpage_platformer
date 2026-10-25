@@ -1,6 +1,7 @@
 import { coinId, eligibleLootPlatform } from './encounters';
 import type { CoinPickup, EquipmentPickup, PageEncounter, PagePickup } from './progression-types';
 import { MOTION, type Platform } from '../engine/types';
+import { worldEquipmentId } from './equipment-id';
 
 const EDGE_MARGIN = 3;
 const LOW_LIFT = 18;
@@ -64,11 +65,12 @@ export function planPickups(
       pickups.push(pickup);
     }
     const equipment = encounter.equipment;
-    if (equipment && !seen.has(equipment.id) && !claimedEquipment?.has(encounter.id) && !claimedEquipment?.has(equipment.id)) {
-      seen.add(equipment.id);
-      const cached = existing.get(equipment.id);
+    const pickupId = worldEquipmentId(encounter.id);
+    if (equipment?.slot === 'boots' && !seen.has(pickupId) && !claimedEquipment?.has(encounter.id) && !claimedEquipment?.has(pickupId)) {
+      seen.add(pickupId);
+      const cached = existing.get(pickupId);
       const pickup: EquipmentPickup = cached?.kind === 'equipment' ? cached : {
-        kind: 'equipment', id: equipment.id, equipment, encounterId: encounter.id, logicalKey: encounter.logicalKey,
+        kind: 'equipment', id: pickupId, equipment, encounterId: encounter.id, logicalKey: encounter.logicalKey,
         platformId: '', fraction: 0.5, lift: 14, x: 0, y: 0, available: false,
       };
       position(pickup, surface);

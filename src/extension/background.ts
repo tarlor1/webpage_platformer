@@ -56,7 +56,7 @@ async function handleRequest(request: Record<string, unknown>): Promise<Progress
     throw new Error('Equipping requires an owned item ID or null.');
   }
   if ((request.type === 'progress:buy' || request.type === 'progress:sell')
-    && (typeof request.itemId !== 'string' || request.itemId.length > 256)) {
+    && (typeof request.itemId !== 'string' || !request.itemId || request.itemId.length > 131072)) {
     
     throw new Error('Shop actions require a valid item ID: ' + request.itemId);
   }

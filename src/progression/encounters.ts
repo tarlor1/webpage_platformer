@@ -1,4 +1,5 @@
 import { pageSeedKey } from '../page/page-identity';
+import { equipmentId } from './equipment-id';
 import type { PageEncounter } from './progression-types';
 import type { Platform } from '../engine/types';
 import { surfaceMetadata } from '../page/surface-metadata';
@@ -37,7 +38,7 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
   return {
     id, seedKey, logicalKey, coinCount, coinValue: 1, xpPerCoin: 20,
     equipment: hasBoots ? {
-      id: `${id}:equipment:boots`, name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
+      id: equipmentId({ name, slot: 'boots', rarity: 'rare' }), name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
       description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Find these boots on their webpage platform and pick them up; coins are not required.`,
     } : null,
   };

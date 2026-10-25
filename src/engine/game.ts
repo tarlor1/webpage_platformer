@@ -19,6 +19,7 @@ import { mountShopUI, type ShopPanel } from '../ui/shop-ui';
 import { EQUIPMENT_STORAGE_PREFIX, PLAYER_STORAGE_KEY, type EquipmentOwnership, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
 import { beginMeasurements, readBounds } from '../page/frame-measurement';
 import { composedParent } from '../page/composed-dom';
+import { inventoryItemId } from '../progression/equipment-id';
 
 const PAGE_MUTATIONS: MutationObserverInit = {
   subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true,
@@ -270,6 +271,7 @@ export class Game {
     this.debug = !this.debug;
     this.host?.shadowRoot?.querySelector('.debug')?.setAttribute('aria-pressed', String(this.debug));
     if (this.detail) this.detail.hidden = !this.debug;
+    this.progressionPanel?.setDebug(this.debug);
   }
 
   private scrolled = (event: Event): void => {
@@ -556,10 +558,10 @@ export class Game {
     }
     this.saved = state;
     this.collected = new Set(state.collectedCoins);
-    for (const item of state.inventory) this.pendingEquipment.delete(item.id);
-    this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(item => item.id), ...this.pendingEquipment]);
-    this.jumpMultiplier = state.inventory.find(item => item.id === state.equippedItemId)?.jumpMultiplier ?? 1;
-    this.gliderEquipped = state.inventory.some(item => item.id === state.equippedItemId && item.ability === 'glide');
+    for (const item of state.inventory) this.pendingEquipment.delete(inventoryItemId(item));
+    this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(inventoryItemId), ...this.pendingEquipment]);
+    this.jumpMultiplier = state.inventory.find(item => inventoryItemId(item) === state.equippedItemId)?.jumpMultiplier ?? 1;
+    this.gliderEquipped = state.inventory.some(item => inventoryItemId(item) === state.equippedItemId && item.ability === 'glide');
     this.progressError = '';
     this.refreshPickups();
     this.progressionPanel?.update(state, this.encounters);
@@ -643,11 +645,11 @@ export class Game {
         const index = this.pickups.indexOf(pickup);
         if (index >= 0) this.pickups.splice(index, 1);
         const ownership: EquipmentOwnership = { encounterId: pickup.encounterId, equipment: pickup.equipment };
-        void chrome.storage.local.set({ [EQUIPMENT_STORAGE_PREFIX + pickup.id]: ownership })
+        void chrome.storage.local.set({ [EQUIPMENT_STORAGE_PREFIX + pickup.encounterId]: ownership })
           .catch(error => {
             if (!this.active || run !== this.run) return;
             this.pendingEquipment.delete(pickup.id);
-            if (!this.saved?.inventory.some(item => item.id === pickup.id)) this.claimedEquipment.delete(pickup.id);
+            if (!this.saved?.inventory.some(item => inventoryItemId(item) === pickup.id)) this.claimedEquipment.delete(pickup.id);
             this.refreshPickups();
             this.showProgressError(error, run);
           })

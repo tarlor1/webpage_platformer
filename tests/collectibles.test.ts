@@ -6,6 +6,7 @@ import { createPlayer, stepBody } from '../src/engine/physics';
 import { MOTION, type Platform } from '../src/engine/types';
 import type { CoinPickup, EquipmentPickup, PagePickup } from '../src/progression/progression-types';
 import { setSurfaceMetadata } from '../src/page/surface-metadata';
+import { worldEquipmentId } from '../src/progression/equipment-id';
 
 const URL = 'https://example.com/native-surfaces';
 
@@ -312,7 +313,7 @@ test('equipment is a separate ground-level pickup before any coin completion', (
   const initial = planPickups([encounter, encounter], [platform]);
   const gear = initial.filter(pickup => pickup.kind === 'equipment');
   assert.equal(gear.length, 1);
-  assert.equal(gear[0]!.id, encounter.equipment.id);
+  assert.equal(gear[0]!.id, worldEquipmentId(encounter.id));
   assert.equal(gear[0]!.platformId, platform.id);
   assert.ok(gear[0]!.y >= platform.y - MOTION.height && gear[0]!.y < platform.y);
   const coins = initial.filter(pickup => pickup.kind === 'coin');
@@ -321,4 +322,25 @@ test('equipment is a separate ground-level pickup before any coin completion', (
   const claimedGear = new Set([encounter.id]);
   assert.deepEqual(planPickups([encounter], [platform], initial, claimedCoins, claimedGear), []);
   assert.ok(planPickups([encounter], [platform], initial, undefined, claimedGear).every(pickup => pickup.kind === 'coin'));
+});
+
+test('identical boots from different floor drops remain separate pickups even if already owned', () => {
+  let encounter;
+  for (let i = 0; i < 10000; i++) {
+    const candidate = encounterForPlatform(URL, `duplicate-gear:${i}`);
+    if (candidate.equipment) { encounter = candidate; break; }
+  }
+  assert.ok(encounter?.equipment);
+  const other = { ...encounter, id: 'encounter-v2:second-drop', logicalKey: 'second-drop' };
+  const platforms: Platform[] = [encounter, other].map((source, i) => ({
+    id: `floor:${i}`, logicalKey: source.logicalKey, x: i * 300, y: 500, width: 200,
+  }));
+  const planned = planPickups([encounter, other], platforms, [], undefined, new Set([encounter.equipment.id]));
+  const gear = planned.filter(pickup => pickup.kind === 'equipment');
+  assert.equal(gear.length, 2);
+  assert.notEqual(gear[0]!.id, gear[1]!.id);
+  assert.equal(gear[0]!.equipment.id, gear[1]!.equipment.id);
+  const remaining = planPickups([encounter, other], platforms, planned, undefined, new Set([encounter.id]));
+  assert.deepEqual(remaining.filter(pickup => pickup.kind === 'equipment').map(pickup => pickup.id),
+    [worldEquipmentId(other.id)]);
 });

@@ -1,5 +1,8 @@
 export interface Equipment {
+  /** Lowercase hyphenated name:rarity:slot, shared by all sources of this item. */
   id: string;
+  /** Unique owned copy. Absent on catalog offers and uncollected world items. */
+  instanceId?: string;
   name: string;
   slot: 'boots' | 'glider';
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
@@ -15,6 +18,7 @@ export interface PlayerState {
   xp: number;
   level: number;
   inventory: Equipment[];
+  /** An owned copy's instanceId, not its shared catalog id. */
   equippedItemId: string | null;
   completedEncounters: string[];
   claimedRewards: string[];
