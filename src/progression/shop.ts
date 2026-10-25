@@ -1,5 +1,6 @@
 import type { Equipment } from './progression-types';
 import { equipmentId } from './equipment-id';
+import { bootTier, createBoot } from './boots';
 
 export interface ShopOffer {
   item: Equipment;
@@ -8,14 +9,7 @@ export interface ShopOffer {
 }
 
 const offers: { item: Omit<Equipment, 'id'>; price: number; sellPrice: number }[] = [
-  {
-    item: {
-      name: 'Springheel Boots', slot: 'boots', rarity: 'common',
-      jumpMultiplier: 1.2, color: '#ad874e',
-      description: 'Increases jump height.',
-    },
-    price: 12, sellPrice: 6,
-  },
+  { item: createBoot('common', true), price: 12, sellPrice: bootTier('common').sellPrice },
   {
     item: {
       name: 'Pocket Glider', slot: 'glider', rarity: 'common',
@@ -35,5 +29,5 @@ export function shopOffer(itemId: string): ShopOffer | undefined {
 }
 
 export function sellValue(item: Equipment): number {
-  return shopOffer(item.id)?.sellPrice ?? (item.slot === 'glider' ? 10 : 6);
+  return item.slot === 'glider' ? 10 : bootTier(item.rarity).sellPrice;
 }

@@ -93,14 +93,14 @@ test('3–7 coin sets and approximately one-percent equipment rolls vary by plat
     }
     if (encounter.equipment) {
       gear++;
-      assert.ok(encounter.equipment.jumpMultiplier >= 1.15 && encounter.equipment.jumpMultiplier <= 1.25);
-      assert.equal(encounter.equipment.id, `${encounter.equipment.name.toLowerCase().replaceAll(' ', '-')}:rare:boots`);
+      assert.ok(encounter.equipment.jumpMultiplier >= 1.2 && encounter.equipment.jumpMultiplier <= 1.9);
+      assert.equal(encounter.equipment.id, `${encounter.equipment.name.toLowerCase().replaceAll(' ', '-')}:${encounter.equipment.rarity}:boots`);
       appearances.add(`${encounter.equipment.name}:${encounter.equipment.color}:${encounter.equipment.jumpMultiplier}`);
     }
   }
   assert.deepEqual([...counts].sort(), [3, 4, 5, 6, 7]);
   assert.ok(gear > 10 && gear < 45, `expected about 0.25% rare platforms, received ${gear}/10000`);
-  assert.ok(appearances.size > 10);
+  assert.ok(appearances.size >= 3 && appearances.size <= 5);
 });
 
 test('population stays sparse while preserving rare platforms and started reward sets', () => {

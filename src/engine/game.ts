@@ -163,7 +163,7 @@ export class Game {
       .panel-toggle{flex:none;font-size:18px;line-height:1;padding:4px 7px}
       .shop-modal{position:absolute;inset:0;z-index:3;pointer-events:auto}
       .shop-backdrop{position:absolute;inset:0;background:#071016b8}
-      .shop-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));height:min(520px,calc(100vh - 40px));padding:28px;border:3px solid #bc8c43;border-radius:10px;background:#1b2933;color:#f1e5ce;box-shadow:0 8px 36px #000a;font:16px/1.5 system-ui,sans-serif}
+      .shop-dialog{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,calc(100vw - 40px));height:min(520px,calc(100vh - 40px));padding:28px;overflow-y:auto;border:3px solid #bc8c43;border-radius:10px;background:#1b2933;color:#f1e5ce;box-shadow:0 8px 36px #000a;font:16px/1.5 system-ui,sans-serif}
       .shop-dialog h2{margin:0 0 10px;color:#f5cb7d}
       .shop-close{position:absolute;right:12px;top:10px;width:auto;padding:4px 10px;font-size:22px;line-height:1}
       .shop-offers{display:grid;gap:8px;margin:18px 0}.shop-offer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border:1px solid #596971;border-radius:5px;background:#15212b}.shop-offer span{min-width:0}.shop-sell h3{margin:18px 0 8px;color:#f5cb7d}.shop-message{color:#ffbeb1;min-height:1.5em}

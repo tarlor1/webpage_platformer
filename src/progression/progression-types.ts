@@ -5,7 +5,7 @@ export interface Equipment {
   instanceId?: string;
   name: string;
   slot: 'boots' | 'glider';
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
   jumpMultiplier: number;
   description: string;
   ability?: 'glide';

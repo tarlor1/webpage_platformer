@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encounterForPlatform } from '../src/progression/encounters';
 import { worldEquipmentId } from '../src/progression/equipment-id';
+import { createBoot } from '../src/progression/boots';
 import {
   EQUIPMENT_STORAGE_PREFIX, LEGACY_PLAYER_STORAGE_KEY, PLAYER_STORAGE_KEY,
   type PlayerState, type ProgressionResponse,
@@ -23,7 +24,7 @@ test('worker recovers durable ownership and serializes storage pickups with coin
     completedEncounters: ['encounter-v1:old'], claimedRewards: ['encounter-v1:old'], collectedCoins: ['encounter-v1:old:coin:0'] };
   const startupEncounter = equipmentEncounter('https://example.com/before-worker-started');
   const startupOwnership = { encounterId: startupEncounter.id, equipment: startupEncounter.equipment };
-  const legacyOwned = { ...legacyBoots, instanceId: `legacy:${legacyBoots.id}` };
+  const legacyOwned = { ...createBoot('rare'), instanceId: `legacy:${legacyBoots.id}` };
   const startupOwned = { ...startupEncounter.equipment, instanceId: worldEquipmentId(startupEncounter.id) };
   const startupKey = EQUIPMENT_STORAGE_PREFIX + startupEncounter.equipment.id;
   const storage: Record<string, unknown> = {

@@ -1,12 +1,10 @@
 import { pageSeedKey } from '../page/page-identity';
-import { equipmentId } from './equipment-id';
+import { worldBoot } from './boots';
 import type { PageEncounter } from './progression-types';
 import type { Platform } from '../engine/types';
 import { surfaceMetadata } from '../page/surface-metadata';
 
 const VERSION = 2;
-const BOOT_NAMES = ['Springheel Boots', 'Skybound Boots', 'Piston Boots', 'Cloudstep Boots', 'Coppercoil Boots', 'Vaulting Boots'] as const;
-const BOOT_COLORS = ['#ad874e', '#8bb6ca', '#b9b3ff', '#7fe4d7', '#cf8d67', '#d5a653'] as const;
 const populationCache = new WeakMap<PageEncounter, { id: string; populated: boolean }>();
 
 function seededRandom(key: string): () => number {
@@ -32,15 +30,10 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
   const next = seededRandom(id);
   const coinCount = 3 + next() % 5;
   const hasBoots = next() % 400 === 0;
-  const name = BOOT_NAMES[next() % BOOT_NAMES.length]!;
-  const jumpMultiplier = (115 + next() % 11) / 100;
-  const color = BOOT_COLORS[next() % BOOT_COLORS.length]!;
+  const boots = hasBoots ? worldBoot(next() % 100) : null;
   return {
     id, seedKey, logicalKey, coinCount, coinValue: 1, xpPerCoin: 20,
-    equipment: hasBoots ? {
-      id: equipmentId({ name, slot: 'boots', rarity: 'rare' }), name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
-      description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Find these boots on their webpage platform and pick them up; coins are not required.`,
-    } : null,
+    equipment: boots,
   };
 }
 

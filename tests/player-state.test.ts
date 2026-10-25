@@ -4,6 +4,7 @@ import { coinId, encounterForPlatform } from '../src/progression/encounters';
 import { buyItem, collectCoin, collectEquipment, createPlayerState, equipItem, readPlayerState, sellItem } from '../src/progression/player-state';
 import type { PlayerState } from '../src/progression/progression-types';
 import { inventoryItemId, worldEquipmentId } from '../src/progression/equipment-id';
+import { createBoot } from '../src/progression/boots';
 
 const PAGE = 'https://example.com/article';
 function keyWithEquipment(present: boolean): string {
@@ -108,8 +109,7 @@ test('shop sells a glider, equips the first purchase, and resells it for less', 
 
 test('shop boots can be bought when a different pair is already owned', () => {
   const existing = {
-    id: 'skybound-boots:rare:boots', instanceId: 'test:skybound', name: 'Skybound Boots', slot: 'boots' as const, rarity: 'rare' as const,
-    jumpMultiplier: 1.15, description: 'A different pair.',
+    ...createBoot('rare'), instanceId: 'test:skybound',
   };
   const state = { ...createPlayerState(), coins: 20, inventory: [existing] };
   const purchased = buyItem(state, 'springheel-boots:common:boots').state;
@@ -194,7 +194,7 @@ test('owned gear equips and unequips idempotently, and an unearned deterministic
   assert.equal(equipItem(unequipped, null).state, unequipped);
 });
 
-test('v1 migration normalizes equipment IDs and preserves stats, selection and claim history', () => {
+test('v1 migration applies rarity stats and preserves selection and claim history', () => {
   const boots = { id: 'encounter-v1:legacy:equipment:boots', name: 'Legacy Boots', slot: 'boots', rarity: 'rare',
     jumpMultiplier: 1.2, description: 'Earned on an older page.' };
   const legacy = { version: 1, revision: 19, coins: 75, xp: 300, level: 4, inventory: [boots], equippedItemId: boots.id,
@@ -204,7 +204,7 @@ test('v1 migration normalizes equipment IDs and preserves stats, selection and c
   const migrated = readPlayerState(legacy);
   const { equippedItemId: _oldSelection, ...legacyFields } = legacy;
   assert.deepEqual(migrated, { ...legacyFields, version: 2,
-    inventory: [{ ...boots, id: 'legacy-boots:rare:boots', instanceId: `legacy:${boots.id}` }],
+    inventory: [{ ...createBoot('rare'), instanceId: `legacy:${boots.id}` }],
     equippedItems: { boots: `legacy:${boots.id}`, glider: null } });
   assert.deepEqual(legacy, backup);
   assert.equal(readPlayerState(migrated), migrated);
@@ -217,7 +217,7 @@ test('v1 migration normalizes equipment IDs and preserves stats, selection and c
   assert.ok(claimed.completedEncounters.includes('encounter-v1:legacy'));
 });
 
-test('equipment ID migration preserves all old copies, individual stats, selection and currency', () => {
+test('equipment migration preserves all copies, selection and currency while normalizing tier stats', () => {
   const first = { ...ownership.equipment, id: 'encounter-v2:first:equipment:boots' };
   const equipped = { ...first, id: 'encounter-v2:second:equipment:boots', jumpMultiplier: 1.25 };
   const { equippedItems: _slots, ...oldState } = createPlayerState();
@@ -226,7 +226,7 @@ test('equipment ID migration preserves all old copies, individual stats, selecti
   const migrated = readPlayerState(original);
   assert.equal(migrated.inventory.length, 2);
   assert.equal(migrated.inventory[0]!.jumpMultiplier, first.jumpMultiplier);
-  assert.equal(migrated.inventory[1]!.jumpMultiplier, 1.25);
+  assert.equal(migrated.inventory[1]!.jumpMultiplier, createBoot(first.rarity).jumpMultiplier);
   assert.equal(migrated.inventory[0]!.id, ownership.equipment.id);
   assert.equal(migrated.inventory[1]!.id, ownership.equipment.id);
   assert.equal(migrated.equippedItems.boots, `legacy:${equipped.id}`);

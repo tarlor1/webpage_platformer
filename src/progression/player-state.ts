@@ -2,6 +2,7 @@ import { coinId, encounterForPlatform } from './encounters';
 import type { Equipment, EquipmentOwnership, PlayerState } from './progression-types';
 import { shopOffer, sellValue } from './shop';
 import { equipmentId, inventoryItemId, worldEquipmentId } from './equipment-id';
+import { normalizeBoot } from './boots';
 
 export interface PlayerTransition {
   state: PlayerState;
@@ -41,10 +42,10 @@ function equipment(value: unknown): value is Equipment {
     && (item.instanceId === undefined || typeof item.instanceId === 'string' && item.instanceId.length > 0)
     && typeof item.name === 'string' && item.name.length > 0
     && (item.slot === 'boots' || item.slot === 'glider')
-    && ['common', 'rare', 'epic', 'legendary'].includes(item.rarity as string)
+    && ['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(item.rarity as string)
     && typeof item.jumpMultiplier === 'number' && Number.isFinite(item.jumpMultiplier)
     && (item.slot === 'glider' ? item.ability === 'glide' && item.jumpMultiplier === 1
-      : item.jumpMultiplier >= 1.15 && item.jumpMultiplier <= 1.25)
+      : item.jumpMultiplier >= 1.15 && item.jumpMultiplier <= 1.9)
     && (item.ability === undefined || item.ability === 'glide')
     && (item.color === undefined || (typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color)))
     && typeof item.description === 'string';
@@ -97,11 +98,12 @@ export function readPlayerState(value: unknown): PlayerState {
   const inventory: Equipment[] = [];
   const equippedItems = { ...selection };
   for (const item of state.inventory) {
-    const id = equipmentId(item);
+    const normalized = normalizeBoot(item);
+    const id = equipmentId(normalized);
     // Deterministic migration preserves every old copy and its original stats.
     const instanceId = item.instanceId ?? `legacy:${item.id}`;
     if (inventoryItemId(item) === selection[item.slot]) equippedItems[item.slot] = instanceId;
-    inventory.push(item.id === id && item.instanceId === instanceId ? item : { ...item, id, instanceId });
+    inventory.push(normalized.id === id && normalized.instanceId === instanceId ? normalized : { ...normalized, id, instanceId });
   }
   if (new Set(inventory.map(inventoryItemId)).size !== inventory.length) {
     throw new Error('Saved inventory has duplicate equipment instances. Progress was not changed.');
@@ -164,7 +166,7 @@ export function collectEquipment(state: PlayerState, value: unknown): PlayerTran
       || (/^encounter-v[12]:/.test(record.encounterId) && record.equipment.id === equipmentId(record.equipment)))) {
     throw new Error('Saved equipment ownership is invalid.');
   }
-  const item = { ...record.equipment, id: equipmentId(record.equipment), instanceId: worldEquipmentId(record.encounterId) };
+  const item = { ...normalizeBoot(record.equipment), instanceId: worldEquipmentId(record.encounterId) };
   if (state.claimedRewards.includes(record.encounterId)
     || state.inventory.some(owned => inventoryItemId(owned) === item.instanceId)) {
     return { state, duplicate: true, reward: null };

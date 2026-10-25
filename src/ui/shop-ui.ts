@@ -1,5 +1,5 @@
 import type { PlayerState } from '../progression/progression-types';
-import { SHOP_OFFERS, shopOffer } from '../progression/shop';
+import { SHOP_OFFERS, sellValue } from '../progression/shop';
 import { equipmentId, inventoryItemId } from '../progression/equipment-id';
 
 export interface ShopPanel {
@@ -33,7 +33,7 @@ export function mountShopUI(
       const row = document.createElement('div');
       row.className = 'shop-offer';
       const text = document.createElement('span');
-      text.textContent = `${offer.item.name} — ${offer.price} coins · ${offer.item.description}`;
+      text.textContent = `${offer.item.name} (${offer.item.rarity}) — ${offer.price} coins · ${offer.item.description}`;
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.shopBuy = offer.item.id;
@@ -55,8 +55,7 @@ export function mountShopUI(
       const row = document.createElement('div');
       row.className = 'shop-offer';
       const text = document.createElement('span');
-      const offer = shopOffer(item.id);
-      text.textContent = `${item.name} — sell for ${offer?.sellPrice ?? (item.slot === 'glider' ? 10 : 6)} coins`;
+      text.textContent = `${item.name} (${item.rarity}) — sell for ${sellValue(item)} coins`;
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.shopSell = instanceId;

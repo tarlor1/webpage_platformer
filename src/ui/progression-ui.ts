@@ -6,6 +6,7 @@ interface EquipmentRow {
   element: HTMLLIElement;
   icon: HTMLElement;
   name: HTMLElement;
+  rarity: HTMLElement;
   description: HTMLElement;
   effect: HTMLElement;
   ids: HTMLElement;
@@ -123,7 +124,6 @@ export function mountProgressionUI(
     name.className = 'progression-item-name';
     const rarity = document.createElement('span');
     rarity.className = 'progression-rare';
-    rarity.textContent = 'Rare';
     const marker = document.createElement('span');
     marker.className = 'progression-equipped';
     marker.textContent = 'Equipped';
@@ -139,7 +139,7 @@ export function mountProgressionUI(
     ids.className = 'progression-item-ids';
     element.append(heading, description, effect, button, ids);
     list.append(element);
-    return { element, icon, name, description, effect, ids, marker, button };
+    return { element, icon, name, rarity, description, effect, ids, marker, button };
   }
 
   function render(): void {
@@ -169,7 +169,7 @@ export function mountProgressionUI(
       : `Discovered platforms: ${encounters.length} · loading saved coin progress…`);
     setText(summary, state ? `Inventory (${state.inventory.length})` : 'Inventory');
     setText(empty, state
-      ? 'Rare jump boots appear on about 0.25% of platforms. Find and pick up the boot icon; coins do not unlock equipment. Gliders are sold by the merchant.'
+      ? 'Boots appear on about 0.25% of platforms. Higher rarities jump higher and are harder to find. Gliders are sold by the merchant.'
       : 'Loading saved inventory…');
     empty.hidden = !!state?.inventory.length;
 
@@ -189,6 +189,9 @@ export function mountProgressionUI(
       }
       const equipped = state?.equippedItems[item.slot] === instanceId;
       setText(row.name, item.name);
+      setText(row.rarity, item.rarity);
+      row.rarity.style.color = item.color ?? '#ad874e';
+      row.rarity.style.borderColor = item.color ?? '#ad874e';
       setText(row.ids, `ID: ${item.id}\nInstance ID: ${instanceId}`);
       row.icon.style.borderColor = item.color ?? '#ad874e';
       setText(row.description, item.description);
