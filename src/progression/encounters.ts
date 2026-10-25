@@ -36,7 +36,7 @@ export function encounterForPlatform(url: string, logicalKey: string): PageEncou
     id, seedKey, logicalKey, coinCount, coinValue: 5, xpPerCoin: 20,
     equipment: hasBoots ? {
       id: `${id}:equipment:boots`, name, slot: 'boots', rarity: 'rare', jumpMultiplier, color,
-      description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Automatically awarded after collecting all ${coinCount} coins on this platform.`,
+      description: `Increases jump speed by ${Math.round((jumpMultiplier - 1) * 100)}%. Find these boots on their webpage platform and pick them up; coins are not required.`,
     } : null,
   };
 }

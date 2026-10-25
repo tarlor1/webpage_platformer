@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Open-shadow media terrain</title>
+<style>
+  body { margin: 0; min-height: 1500px; background: #eef2f3; color: #243d49; font: 16px/1.5 system-ui; }
+  header { padding: 24px; max-width: 700px; }
+  button { padding: 9px 14px; font: inherit; }
+  media-card { position: absolute; display: block; top: 500px; left: calc(50% - 200px); width: 400px; height: 280px; }
+  #late-root { position: absolute; top: 820px; left: 40px; width: 240px; height: 90px; }
+</style>
+<header>
+  <h1>Open-shadow media terrain</h1>
+  <p>The real video and controls belong to an open shadow root. Its oversized video is clipped to a visible frame. Move the component, append a shadow control, and attach a late root without changing the light DOM.</p>
+  <button id="move">Move player component</button>
+  <button id="late">Attach a late shadow root</button>
+</header>
+<media-card id="player" data-post-id="fixture-post"></media-card>
+<div id="late-root" data-item-id="late-component"></div>
+<script>
+  const player = document.querySelector('#player');
+  const root = player.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>
+    :host { color: #243d49; }
+    .crop { position: relative; width: 400px; height: 200px; overflow: clip; background: #527687; }
+    video { width: 480px; height: 250px; transform: translate(-30px,-20px); background: #527687; }
+    button { position: absolute; top: 230px; left: 80px; width: 240px; padding: 10px; font: 16px system-ui; }
+  </style><div class="crop"><video id="native-video" controls aria-label="Clipped native shadow video"></video></div><button id="append">Append another original control</button>`;
+  let moved = false;
+  document.querySelector('#move').onclick = () => {
+    moved = !moved;
+    player.style.transform = moved ? 'translate(70px,-40px)' : 'translate(0,0)';
+  };
+  root.querySelector('#append').onclick = () => {
+    if (root.querySelector('#new-edge')) return;
+    const button = document.createElement('button');
+    button.id = 'new-edge'; button.textContent = 'New shadow platform';
+    button.style.cssText = 'top:340px;left:0;width:230px';
+    root.append(button);
+  };
+  document.querySelector('#late').onclick = () => {
+    const host = document.querySelector('#late-root');
+    if (!host.shadowRoot) host.attachShadow({ mode: 'open' }).innerHTML = '<button style="width:240px;height:55px">Late native shadow control</button>';
+  };
+</script>
+</html>

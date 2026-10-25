@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { coinId, encounterForPlatform } from '../src/progression/encounters';
-import { collectCoin, createPlayerState, equipItem, readPlayerState } from '../src/progression/player-state';
+import { collectCoin, collectEquipment, createPlayerState, equipItem, readPlayerState } from '../src/progression/player-state';
 import type { PlayerState } from '../src/progression/progression-types';
 
 const PAGE = 'https://example.com/article';
@@ -14,6 +14,8 @@ function keyWithEquipment(present: boolean): string {
 }
 const rareKey = keyWithEquipment(true);
 const ordinaryKey = keyWithEquipment(false);
+const rareEncounter = encounterForPlatform(PAGE, rareKey);
+const ownership = { encounterId: rareEncounter.id, equipment: rareEncounter.equipment! };
 function completePlatform(key: string, state = createPlayerState(), url = PAGE): PlayerState {
   const encounter = encounterForPlatform(url, key);
   for (let index = 0; index < encounter.coinCount; index++) state = collectCoin(state, url, key, index).state;
@@ -47,31 +49,47 @@ test('one coin awards five currency and twenty XP without mutating its input', (
   assert.deepEqual(initial, before);
 });
 
-test('final distinct platform coin explicitly auto-awards deterministic gear exactly once', () => {
+test('completing even a rare platform coin set never unlocks its equipment', () => {
   const encounter = encounterForPlatform(PAGE, rareKey);
   let state = createPlayerState();
-  const order = Array.from({ length: encounter.coinCount }, (_, index) => encounter.coinCount - 1 - index);
-  for (let position = 0; position < order.length; position++) {
-    const result = collectCoin(state, PAGE, rareKey, order[position]!);
+  for (let index = 0; index < encounter.coinCount; index++) {
+    const result = collectCoin(state, PAGE, rareKey, index);
     state = result.state;
-    if (position < order.length - 1) {
-      assert.equal(result.reward, null);
-      assert.deepEqual(state.inventory, []);
-      assert.deepEqual(state.completedEncounters, []);
-    } else assert.deepEqual(result.reward, encounter.equipment);
+    assert.equal(result.reward, null);
+    assert.deepEqual(state.inventory, []);
+    assert.deepEqual(state.claimedRewards, []);
   }
-  assert.deepEqual(state.inventory, [encounter.equipment]);
   assert.deepEqual(state.completedEncounters, [encounter.id]);
-  assert.deepEqual(state.claimedRewards, [encounter.id]);
-  assert.equal(state.equippedItemId, null);
   assert.equal(state.coins, encounter.coinCount * 5);
   assert.equal(state.xp, encounter.coinCount * 20);
-  for (const index of [...order, ...order]) {
-    const duplicate = collectCoin(state, `${PAGE}?utm_source=other-tab#other`, rareKey, index);
-    assert.equal(duplicate.state, state);
-    assert.equal(duplicate.duplicate, true);
-    assert.equal(duplicate.reward, null);
+  assert.equal(collectCoin(state, PAGE, rareKey, 0).state, state);
+});
+
+test('equipment can be picked up with zero coins and is claimed once independently', () => {
+  const encounter = encounterForPlatform(PAGE, rareKey);
+  const initial = createPlayerState();
+  const result = collectEquipment(initial, ownership);
+  assert.equal(result.duplicate, false);
+  assert.deepEqual(result.reward, encounter.equipment);
+  assert.deepEqual(result.state.inventory, [encounter.equipment]);
+  assert.deepEqual(result.state.claimedRewards, [encounter.id]);
+  assert.deepEqual(result.state.completedEncounters, []);
+  assert.deepEqual(result.state.collectedCoins, []);
+  assert.equal(result.state.coins, 0);
+  assert.equal(result.state.xp, 0);
+  assert.equal(result.state.equippedItemId, null);
+  assert.deepEqual(initial.inventory, []);
+  const duplicate = collectEquipment(result.state, structuredClone(ownership));
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.state, result.state);
+  assert.equal(duplicate.reward, null);
+  for (const invalid of [null, {}, { ...ownership, encounterId: '' }, { ...ownership, equipment: null },
+    { ...ownership, encounterId: 'unrelated' }, { ...ownership, equipment: { ...ownership.equipment, jumpMultiplier: 99 } }]) {
+    assert.throws(() => collectEquipment(initial, invalid));
   }
+  const beforeCoins = completePlatform(rareKey, result.state);
+  const afterCoins = collectEquipment(completePlatform(rareKey), ownership).state;
+  assert.deepEqual(beforeCoins, afterCoins);
 });
 
 test('a new logical key and a new meaningful URL each permit distinct coin sets on old pages', () => {
@@ -88,7 +106,7 @@ test('ordinary platform completion creates no equipment and retains independent 
   const state = completePlatform(ordinaryKey);
   assert.equal(encounter.equipment, null);
   assert.deepEqual(state.completedEncounters, [encounter.id]);
-  assert.deepEqual(state.claimedRewards, [encounter.id]);
+  assert.deepEqual(state.claimedRewards, []);
   assert.deepEqual(state.inventory, []);
   assert.equal(state.coins, encounter.coinCount * 5);
   assert.equal(state.level, 1 + Math.floor(state.xp / 100));
@@ -117,7 +135,7 @@ test('invalid indices, logical keys and URLs leave earned progression unchanged'
 
 test('owned gear equips and unequips idempotently, and an unearned deterministic ID is rejected', () => {
   assert.throws(() => equipItem(createPlayerState(), encounterForPlatform(PAGE, rareKey).equipment!.id), /not owned/);
-  const earned = completePlatform(rareKey);
+  const earned = collectEquipment(createPlayerState(), ownership).state;
   const id = earned.inventory[0]!.id;
   const equipped = equipItem(earned, id).state;
   assert.equal(equipped.equippedItemId, id);
@@ -152,7 +170,7 @@ test('v1 migration is idempotent and preserves exact legacy inventory, equipment
 });
 
 test('serialized saves retain selection and duplicate protection across restart', () => {
-  const earned = completePlatform(rareKey);
+  const earned = collectEquipment(completePlatform(rareKey), ownership).state;
   const equipped = equipItem(earned, earned.inventory[0]!.id).state;
   const saved: unknown = JSON.parse(JSON.stringify(equipped));
   const restored = readPlayerState(saved);
@@ -163,7 +181,7 @@ test('serialized saves retain selection and duplicate protection across restart'
 });
 
 test('corrupt and unsupported saves fail visibly without resetting progression', () => {
-  const valid = completePlatform(rareKey);
+  const valid = collectEquipment(completePlatform(rareKey), ownership).state;
   for (const saved of [null, {}, { ...valid, version: 3 }, { ...valid, revision: -1 }, { ...valid, coins: NaN },
     { ...valid, xp: 1.5 }, { ...valid, level: 99 }, { ...valid, inventory: [{}] },
     { ...valid, inventory: [valid.inventory[0], valid.inventory[0]] },

@@ -162,7 +162,7 @@ export function mountProgressionUI(
       : `Discovered platforms: ${encounters.length} · loading saved coin progress…`);
     setText(summary, state ? `Inventory (${state.inventory.length})` : 'Inventory');
     setText(empty, state
-      ? 'Rare jump boots occur on about 1% of platforms and are automatically awarded after collecting that platform’s coins.'
+      ? 'Rare jump boots appear on about 1% of platforms. Find and pick up the boot icon; coins do not unlock equipment.'
       : 'Loading saved inventory…');
     empty.hidden = !!state?.inventory.length;
 

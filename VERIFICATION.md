@@ -1,8 +1,57 @@
 # Verification record
 
-## Version 1.1.0: persistent exploration progression
+## Version 1.2.0: sparse pickups, stable terrain, and site coverage
 
-Current source checks: `bun run typecheck`, **76 tests across seven files**, and `bun run build` passed. Output includes the approximately 51.2 kB content bundle, 5.0 kB MV3 service worker, and 1.2 kB popup. All verification below used the actual unpacked extension and Chrome local storage in owned disposable profiles. No save was prefilled with equipment.
+The final source passed `bun run test` (**98 tests across eight files**), `bun run typecheck`, and `bun run build`, including the request-free equipment-ownership change. The build produced approximately 59.1 kB of content code, a 7.2 kB MV3 worker, and a 1.2 kB popup. Browser observations used the actual unpacked extension in Linux Chromium 155.
+
+### Direct equipment pickup and persistence
+
+On the default `http://127.0.0.1:8080/fixtures/progression.html` workshop, a fresh player walked over the visible Piston Boots without jumping or collecting coins. The world boot disappeared, inventory gained one item, and currency, XP, collected coins, and completed encounters remained empty/zero. The pickup did not auto-equip. Instrumented outgoing content messages contained only the initial `progress:get`; **no equipment-collection message was sent**. The durable ownership record and aggregate inventory both contained the same seeded boots.
+
+After manual Inventory Equip, the message trace added only `progress:equip`. A real jump landed on the original upper control at y = 340, a 160 CSS-pixel rise from the lower control at y = 500. The character's measured top was y = 310 and feet y = 340.
+
+Two extension content contexts then issued eight concurrent direct-storage writes of the same valid ownership record for a second seeded item. Inventory gained exactly one copy and one additional reward claim; aggregate revision advanced from 2 to 3. Coins and XP stayed zero, and Piston Boots remained equipped. This exercises concurrent ownership writes, not two synchronized physical pickups. The earlier equipment-RPC race is superseded.
+
+The native browser process was stopped and restarted with the same disposable profile. The entire saved local-storage JSON was identical: aggregate player state, both ownership records, two inventory items, equipped Piston Boots, zero coins/XP, and revision 3. The restarted game displayed Inventory (2), with no browser page errors recorded. Unit coverage additionally exercises ownership recovery before indexing, failed-index recovery, legacy migration, and coin-write queue recovery.
+
+### Density and geometry observations
+
+On live `github.com/oven-sh/bun`, a **91-frame scroll probe** measured at most **23 coin draws and 24 total active pickups**. A separate current-DOM comparison found 145 logical surfaces: the old populate-all policy generated 725 coins, while the sparse policy populated 23 surfaces with 127 coins. These generated totals are distinct from retained HUD discovery history. The implemented policy seeds about 10% of ordinary surfaces plus all rare equipment surfaces, with 3–7 coins each and a 24-active-pickup cap. These measurements establish a draw bound, not an FPS or compositor benchmark.
+
+| Check | Observed result |
+| --- | --- |
+| Moving-support fixture, 184 frames | Zero player-feet gap, support-local drift, track-edge gap, or missing anchored tracks; 36 frames retained support while its carrier was offscreen. |
+| Lando scroll, 133 frames, 2920 → 3340 → 2920 | Zero feet gap, support-local drift about `5.12e-13` CSS px, no missing anchored tracks, and at least seven material draws. |
+| Overlapping navbar, 100 frames, scroll 0 → 900 → 0 | Zero feet gap or local drift; support ID unchanged. |
+| Airborne recovery | After 40 airborne frames and a 387 px fall, recovery returned to platform-local offset 455, not viewport center. |
+| Animated media fixture | Clipped image, video, and iframe widths 300/320/320 CSS px, with zero top/left error; decorative fullscreen WebGL canvas excluded. Blob-video source recreation retained identity. |
+| Open-shadow fixture | Native video width 400 CSS px, zero top/left error; actual game platform count 8 → 9 after shadow-child insertion → 10 after late root attachment without a light-DOM mutation. Grounded video support was retained. |
+| Text protection | Eight visible text rectangles had zero checked paint overlap. A 4,200-span budget probe protected pending content and safely reported incomplete full discovery. |
+
+Viewport checks covered fixture and Google homepage widths 1440/1024/768. Actual Chrome zoom 100% and 125% were exercised; a 1024-wide window at 125% yielded CSS dimensions 819×720 with material ready. Repeated activation produced overlay counts 1 → 0 → 1; Escape removed it. Typing `steel and steam platformer ` into Google preserved the exact text and paused gameplay.
+
+### Live-site coverage and access limits
+
+| Site | Actual observed coverage | Limits |
+| --- | --- | --- |
+| Reddit `r/programming` | Public feed: 27 posts, 43 light-DOM images, three iframes; title and thumbnail edges had zero measured error. Scrolling expanded discovery from 27 to 52 posts, ending at 49 with 135 registered surfaces. | Native post video in an open root was initially missing. The generic fix passed the local shadow fixture; the post-fix live-video recheck hit a network-security block. Live Reddit video is not verified after the fix. |
+| TikTok `/` | Public first video by `juliadelgiorno`: two images and one video; video/poster frame about 544.759×968.460 CSS px, zero geometry error; coincident media deduplicated and caption ranges checked. | Login blocked advancing the feed. `/explore` exposed a login/skeleton shell, not a verified feed. |
+| Instagram `/instagram/` | Public profile: 31 images and seven canvases; 14 visible images and seven highlights had zero edge error. After scrolling 740 px, all nine visible grid images were found with stable document coordinates. | No video or iframe was present; Instagram video was not verified. |
+| YouTube | `watch?v=jNQXAC9IVRw` played at readyState 4. The stable `movie_player` owner measured exactly 990 CSS px wide with zero top error; temporarily hiding its internal video preserved the same platform. | Cold homepage had no recommended feed. This verifies the media-frame adapter, not full article semantics. |
+| Google | Homepage geometry, material, viewport/zoom, and typing checks passed. | Current searches for `platformer physics` and `dom geometry` hit unusual-traffic CAPTCHA. Current SERPs were not verified; earlier results-page records below are historical. |
+| Wikipedia `Platform_game` | Actual article: 21 images, one overlay, 54 material draws, and geometry smoke coverage. | Earlier dense coin counts do not describe current density. |
+| GitHub `oven-sh/bun` | Actual overlay, geometry, and sparse-density scroll checks described above. | No FPS claim. |
+| McDonald's | Current response was Access Denied with zero images. | The normal page was not verified. |
+
+Closed shadow roots and cross-origin iframe internals remain inaccessible. Complex rotation, perspective, clipping, and loop resets use approximate axis-aligned geometry; the game supplies one-way tops, not full 3D collisions. Access challenges and login gates were not bypassed.
+
+## Historical verification records
+
+All sections below describe their named earlier builds. Their test totals, bundle sizes, reward rules, site checks, and screenshots are historical evidence, not current acceptance results. In particular, coin-completion equipment awards were replaced by visible physical equipment pickups.
+
+### Historical version 1.1.0: persistent exploration progression
+
+At version 1.1.0, `bun run typecheck`, **76 tests across seven files**, and `bun run build` passed. Output included the approximately 51.2 kB content bundle, 5.0 kB MV3 service worker, and 1.2 kB popup. The following historical checks used the actual unpacked extension and Chrome local storage in owned disposable profiles. No save was prefilled with equipment.
 
 ### Physical collection, equipment, and jump reach
 
@@ -45,7 +94,7 @@ Silver rails over brown wooden sleepers were also observed before progression in
 
 These checks cover the new progression surface and preserve earlier platforming evidence below. They do not repeat the entire historical viewport/zoom/search-results or other-site matrix. McDonald's remains unverified in this environment because its normal page returned Access Denied/HTTP 403. Activation and per-page coordinates are not saved; inventory, equipped item, coins, XP/level, and completion/claim history are. Empty or rapidly changing native layouts can need manual Respawn to replan pickups. There is no combat, shop, backend, account sync, or server anti-cheat.
 
-## Version 1.0.2: thin tracks and roads
+## Historical version 1.0.2: thin tracks and roads
 
 Removed the gold background drawing code. Version-3 URL seeds choose procedural railway tracks or dashed roads, limited to 10 CSS pixels high above native edges. Existing text/media clipping, stable anchors, and original collision geometry remain in use.
 
@@ -53,7 +102,7 @@ Removed the gold background drawing code. Version-3 URL seeds choose procedural 
 
 McDonald's was not revalidated for this appearance-only change; the prior access-denied limitation remains. Earlier background-specific pixel hashes and counts below are historical, not acceptance criteria for tracks.
 
-## Version 1.0.1: missing-material fixes
+## Historical version 1.0.1: missing-material fixes
 
 Removed the 40 ms text-inspection cutoff: a slow but count-bounded scan no longer permanently disables material. Native animations without any protected source descendants are now ignored by clearance discovery; a rotating decorative element cannot disable the entire material layer. The HUD shows the installed version and material inspection status even with Debug off.
 
@@ -61,9 +110,9 @@ Removed the 40 ms text-inspection cutoff: a slow but count-bounded scan no longe
 
 The live Google homepage reported eight eligible material surfaces with 97,201 painted canvas pixels, and 93,423 after the same throttled resize. Both checks displayed version 1.0.1. McDonald's root URL returned Access Denied in Chromium, and the static reader also received HTTP 403; its normal page could not be verified in this session. These checks establish visibility, not a new exhaustive text-overlap matrix.
 
-## Previous change: gold platform material and scroll stability
+## Historical change: gold platform material and scroll stability
 
-The current material build passes `bun run typecheck`, **50 tests across four files**, and `bun run build` (approximately 40 kB of bundled content code). It replaces the tiny-prop implementation below with generation-version-2 procedural brass material. No assets were downloaded or added, and no collision surfaces were added.
+That historical material build passed `bun run typecheck`, **50 tests across four files**, and `bun run build` (approximately 40 kB of bundled content code). It replaced the tiny-prop implementation below with generation-version-2 procedural brass material. No assets were downloaded or added, and no collision surfaces were added.
 
 An additional Google keyboard/typing/Escape interaction scenario exceeded the browser-run deadline of 30 seconds. It is not counted as a passing interaction check for this change; the graphics verification below completed independently.
 
@@ -222,4 +271,4 @@ Only Linux Chromium 155 was exercised. Chrome on other operating systems, older 
 
 Terrain follows axis-aligned DOM bounds and text-line rectangles. Rotation, arbitrary clipping, and visual occlusion are not comprehensively modeled; there is no claim that every covered or visually hidden surface is rejected. Animated GIF or video pixels do not create independently moving terrain when their DOM element's bounds stay fixed. Iframe and shadow-root contents are outside the terrain scan. The live-site results are spot checks, not guarantees for every page, SPA state, animation mechanism, or document size.
 
-The historical platforming-only checks above did not verify progression, inventory, or rewards. Those features are now implemented and verified in the version 1.1.0 section at the top; per-page coordinate persistence, combat, and multiplayer remain absent.
+The historical platforming-only checks above did not verify progression, inventory, or rewards. Version 1.1.0 subsequently verified its then-current progression path; version 1.2.0 observations and their limits are recorded at the top. Per-page coordinate persistence, combat, and multiplayer remain absent.

@@ -1,5 +1,5 @@
 import { coinId, eligibleLootPlatform } from './encounters';
-import type { PageEncounter, PagePickup } from './progression-types';
+import type { CoinPickup, EquipmentPickup, PageEncounter, PagePickup } from './progression-types';
 import { MOTION, type Body, type Platform } from '../engine/types';
 
 const EDGE_MARGIN = 3;
@@ -41,6 +41,7 @@ export function planPickups(
   platforms: readonly Platform[],
   previous: readonly PagePickup[] = [],
   collected?: ReadonlySet<string>,
+  claimedEquipment?: ReadonlySet<string>,
 ): PagePickup[] {
   const existing = new Map(previous.map(pickup => [pickup.id, pickup]));
   const pickups: PagePickup[] = [];
@@ -53,11 +54,23 @@ export function planPickups(
       const id = coinId(encounter, index);
       if (seen.has(id) || collected?.has(id)) continue;
       seen.add(id);
-      const pickup = existing.get(id) ?? {
-        id, index, logicalKey: encounter.logicalKey, platformId: '',
+      const cached = existing.get(id);
+      const pickup: CoinPickup = cached?.kind === 'coin' ? cached : {
+        kind: 'coin', id, index, logicalKey: encounter.logicalKey, platformId: '',
         fraction: (index + 0.5) / encounter.coinCount,
         lift: LOW_LIFT + (SAFE_LIFT - LOW_LIFT) * index / (encounter.coinCount - 1),
         x: 0, y: 0, available: false,
+      };
+      position(pickup, surface);
+      pickups.push(pickup);
+    }
+    const equipment = encounter.equipment;
+    if (equipment && !seen.has(equipment.id) && !claimedEquipment?.has(encounter.id) && !claimedEquipment?.has(equipment.id)) {
+      seen.add(equipment.id);
+      const cached = existing.get(equipment.id);
+      const pickup: EquipmentPickup = cached?.kind === 'equipment' ? cached : {
+        kind: 'equipment', id: equipment.id, equipment, encounterId: encounter.id, logicalKey: encounter.logicalKey,
+        platformId: '', fraction: 0.5, lift: 14, x: 0, y: 0, available: false,
       };
       position(pickup, surface);
       pickups.push(pickup);
@@ -85,12 +98,12 @@ export function selectActivePickups(
   output.length = 0;
   for (const pickup of pickups) {
     if (!pickup.available) continue;
-    const priority = pickup.platformId === player.platformId ? 0 : 1;
+    const priority = pickup.kind === 'equipment' ? 0 : pickup.platformId === player.platformId ? 1 : 2;
     const distance = Math.abs(pickup.x - player.x) + Math.abs(pickup.y - player.y);
     let index = 0;
     for (; index < output.length; index++) {
       const current = output[index]!;
-      const currentPriority = current.platformId === player.platformId ? 0 : 1;
+      const currentPriority = current.kind === 'equipment' ? 0 : current.platformId === player.platformId ? 1 : 2;
       const currentDistance = Math.abs(current.x - player.x) + Math.abs(current.y - player.y);
       if (priority < currentPriority || priority === currentPriority
         && (distance < currentDistance || distance === currentDistance && pickup.id < current.id)) break;

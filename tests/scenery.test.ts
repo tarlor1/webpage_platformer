@@ -155,7 +155,7 @@ test('debug strokes stop at strips, labels/collider remain, and unavailable coin
     const placements = placeScenery([design], [platform]);
     drawWorld(ctx, { platforms: [platform] }, { x: 0, y: 0, width: 20, height: 30, vx: 0, vy: 0, grounded: false }, true, 1,
       { placements, protectedRects: [], ready: true },
-      [{ id: 'unavailable', index: 0, logicalKey: 'original-heading', platformId: platform.id, fraction: 0.5, lift: 22, x: 100, y: 78, available: false }], new Set(), false);
+      [{ kind: 'coin', id: 'unavailable', index: 0, logicalKey: 'original-heading', platformId: platform.id, fraction: 0.5, lift: 22, x: 100, y: 78, available: false }], new Set(), false);
     const strip = placements[0];
     assert.deepEqual(segments, [
       [platform.x, platform.y, strip.x, platform.y],

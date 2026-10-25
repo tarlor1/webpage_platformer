@@ -1,5 +1,5 @@
 import { coinId, encounterForPlatform } from './encounters';
-import type { Equipment, PlayerState } from './progression-types';
+import type { Equipment, EquipmentOwnership, PlayerState } from './progression-types';
 
 export interface PlayerTransition {
   state: PlayerState;
@@ -98,14 +98,10 @@ export function collectCoin(state: PlayerState, url: string, logicalKey: string,
       break;
     }
   }
-  const claim = complete && !state.claimedRewards.includes(encounter.id);
-  const reward = claim && encounter.equipment && !state.inventory.some(item => item.id === encounter.equipment!.id)
-    ? encounter.equipment
-    : null;
   const xp = increment(state.xp, encounter.xpPerCoin);
   return {
     duplicate: false,
-    reward,
+    reward: null,
     state: {
       ...state,
       revision: increment(state.revision, 1),
@@ -115,9 +111,31 @@ export function collectCoin(state: PlayerState, url: string, logicalKey: string,
       collectedCoins,
       completedEncounters: complete && !state.completedEncounters.includes(encounter.id)
         ? [...state.completedEncounters, encounter.id] : state.completedEncounters,
-      claimedRewards: claim ? [...state.claimedRewards, encounter.id] : state.claimedRewards,
-      inventory: reward ? [...state.inventory, reward] : state.inventory,
     },
+  };
+}
+
+/** Index directly saved ownership, independently of coins, without auto-equipping. */
+export function collectEquipment(state: PlayerState, value: unknown): PlayerTransition {
+  if (typeof value !== 'object' || value === null) throw new Error('Saved equipment ownership is invalid.');
+  const record = value as Partial<EquipmentOwnership>;
+  if (typeof record.encounterId !== 'string' || !record.encounterId
+    || !equipment(record.equipment) || !record.equipment.id.startsWith(`${record.encounterId}:equipment:`)) {
+    throw new Error('Saved equipment ownership is invalid.');
+  }
+  const item = record.equipment;
+  if (state.claimedRewards.includes(record.encounterId) || state.inventory.some(owned => owned.id === item.id)) {
+    return { state, duplicate: true, reward: null };
+  }
+  return {
+    state: {
+      ...state,
+      revision: increment(state.revision, 1),
+      inventory: [...state.inventory, item],
+      claimedRewards: [...state.claimedRewards, record.encounterId],
+    },
+    duplicate: false,
+    reward: item,
   };
 }
 

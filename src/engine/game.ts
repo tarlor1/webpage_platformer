@@ -13,7 +13,13 @@ import { pageSeedKey } from '../page/page-identity';
 import { planPickups, selectActivePickups, updatePickups } from '../progression/collectibles';
 import { requestProgression } from '../progression/progression-client';
 import { mountProgressionUI, type ProgressionPanel } from '../ui/progression-ui';
-import { PLAYER_STORAGE_KEY, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
+import { EQUIPMENT_STORAGE_PREFIX, PLAYER_STORAGE_KEY, type EquipmentOwnership, type PageEncounter, type PagePickup, type PlayerState } from '../progression/progression-types';
+
+const PAGE_MUTATIONS: MutationObserverInit = {
+  subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true,
+  attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'src', 'srcset', 'srcdoc', 'poster',
+    'href', 'data-id', 'data-item-id', 'data-product-id', 'data-post-id', 'post-id', 'permalink'],
+};
 
 export class Game {
   active = false;
@@ -59,6 +65,8 @@ export class Game {
   private pickups: PagePickup[] = [];
   private activePickups: PagePickup[] = [];
   private collected = new Set<string>();
+  private claimedEquipment = new Set<string>();
+  private pendingEquipment = new Set<string>();
   private pendingClaims = new Set<string>();
   private jumpMultiplier = 1;
   private progressError = '';
@@ -75,6 +83,8 @@ export class Game {
     this.pickups = [];
     this.activePickups.length = 0;
     this.collected.clear();
+    this.claimedEquipment.clear();
+    this.pendingEquipment.clear();
     this.pendingClaims.clear();
     this.jumpMultiplier = 1;
     this.progressError = '';
@@ -172,7 +182,7 @@ export class Game {
       }
       if (changed && (structural || this.geometry?.needsRebuild || this.clearance?.needsRebuild)) this.schedule();
     });
-    this.mutation.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'src', 'srcset', 'href', 'data-id', 'data-item-id', 'data-product-id'] });
+    this.mutation.observe(document.documentElement, PAGE_MUTATIONS);
     this.resize = new ResizeObserver(this.layoutChanged);
     this.resize.observe(document.documentElement);
     if (document.body) this.resize.observe(document.body);
@@ -211,6 +221,9 @@ export class Game {
 
   private rebuild(): void {
     this.level = buildLevel(this.geometry!.rebuild(this.player));
+    this.mutation!.disconnect();
+    this.mutation!.observe(document.documentElement, PAGE_MUTATIONS);
+    for (const root of this.geometry!.shadowRoots) this.mutation!.observe(root, PAGE_MUTATIONS);
     this.measurePageBounds();
     if (!this.player && !this.placeAtSpawn()) {
       // Empty pages still show the character, but never receive an invented floor.
@@ -340,6 +353,8 @@ export class Game {
     }
     this.saved = state;
     this.collected = new Set(state.collectedCoins);
+    for (const item of state.inventory) this.pendingEquipment.delete(item.id);
+    this.claimedEquipment = new Set([...state.claimedRewards, ...state.inventory.map(item => item.id), ...this.pendingEquipment]);
     this.jumpMultiplier = state.inventory.find(item => item.id === state.equippedItemId)?.jumpMultiplier ?? 1;
     this.progressError = '';
     this.progressionPanel?.update(state, this.encounters);
@@ -355,7 +370,7 @@ export class Game {
   private refreshPickups(): void {
     if (!this.geometry || !this.level || !this.saved) return;
     this.encounters = discoverEncounters(location.href, this.geometry.registryPlatforms, this.encounters, this.collected);
-    this.pickups = planPickups(this.encounters, this.level.platforms, this.pickups, this.collected);
+    this.pickups = planPickups(this.encounters, this.level.platforms, this.pickups, this.collected, this.claimedEquipment);
     this.pickupRevision = this.geometry.registryRevision;
     this.collisionRevision = this.geometry.selectionRevision;
     if (this.player) selectActivePickups(this.pickups, this.player, this.activePickups);
@@ -372,6 +387,24 @@ export class Game {
       if (dx * dx + dy * dy > 64) continue;
       this.pendingClaims.add(pickup.id);
       const run = this.run;
+      if (pickup.kind === 'equipment') {
+        this.pendingEquipment.add(pickup.id);
+        this.claimedEquipment.add(pickup.id);
+        pickup.available = false;
+        const index = this.pickups.indexOf(pickup);
+        if (index >= 0) this.pickups.splice(index, 1);
+        const ownership: EquipmentOwnership = { encounterId: pickup.encounterId, equipment: pickup.equipment };
+        void chrome.storage.local.set({ [EQUIPMENT_STORAGE_PREFIX + pickup.id]: ownership })
+          .catch(error => {
+            if (!this.active || run !== this.run) return;
+            this.pendingEquipment.delete(pickup.id);
+            if (!this.saved?.inventory.some(item => item.id === pickup.id)) this.claimedEquipment.delete(pickup.id);
+            this.refreshPickups();
+            this.showProgressError(error, run);
+          })
+          .finally(() => { if (run === this.run) this.pendingClaims.delete(pickup.id); });
+        continue;
+      }
       void requestProgression({ type: 'progress:collect', url: location.href, logicalKey: pickup.logicalKey, index: pickup.index })
         .then(state => this.acceptProgress(state, run))
         .catch(error => this.showProgressError(error, run))
